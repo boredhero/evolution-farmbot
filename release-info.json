@@ -1,4 +1,4 @@
 {
-  "version": "0.3.3",
-  "notes": "You are now a red arrow on the tactical map instead of a line of text. The marker points the way you are facing and is drawn even when you are standing on a different floor than the crops being displayed, which previously hid it. Other players stay magenta. The caption now only reports how far above or below the displayed floor you are."
+  "version": "0.3.4",
+  "notes": "Worker setup no longer insists on a vanilla chest as the output target. It now proves the block in front accepts items by offering it one, so an ME interface, a chest with an import bus, a drawer or a modded barrel all work. The fuel chest above the turtle is unchanged."
 }

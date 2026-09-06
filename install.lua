@@ -2533,7 +2533,29 @@ function Setup.run(role)
     local found,output=turtle.inspect();assert(found,'No output inventory in front')
     local fuelFound,fuel=turtle.inspectUp();assert(fuelFound,'No fuel chest above turtle')
     local function chest(name) return name=='minecraft:chest' or name=='minecraft:barrel' or name=='minecraft:trapped_chest' end
-    assert(chest(output.name),'Use a vanilla chest/barrel as the output buffer, with an ME Import Bus attached')
+    -- Prove the output target takes items rather than trusting its block name.
+    -- A chest with an ME Import Bus, an ME interface, a drawer or a modded
+    -- barrel all pass; a wall or a decorative block does not.
+    if not chest(output.name) then
+      local accepted
+      for slot=1,16 do
+        if turtle.getItemCount(slot)>0 then
+          turtle.select(slot)
+          accepted=turtle.drop(1)
+          -- Comes straight back, unless an import bus already ingested it.
+          if accepted then turtle.suck(1) end
+          break
+        end
+      end
+      if accepted==false then
+        error('The block in front ('..output.name..') would not take a test item. '..
+          'Use a chest, barrel or ME interface as the output target.',0)
+      elseif accepted==nil then
+        print('Turtle is empty, so '..output.name..' could not be tested. Accepting it.')
+      else
+        print('Output target '..output.name..' accepted a test item.')
+      end
+    end
     assert(chest(fuel.name),'Use a vanilla chest/barrel above the turtle for fuel')
     cfg.outputBlock=output.name;cfg.fuelBlock=fuel.name
     local seedFound,seed=turtle.inspectDown()
@@ -3106,7 +3128,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.3.3\", \"ref\": \"v0.3.3\"}\
+["farm/version.json"] = "{\"version\": \"0.3.4\", \"ref\": \"v0.3.4\"}\
 ",
 }
 local args={...}
