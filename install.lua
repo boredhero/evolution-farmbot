@@ -3099,7 +3099,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.4.0\", \"ref\": \"v0.4.0\"}\
+["farm/version.json"] = "{\"version\": \"0.3.2\", \"ref\": \"v0.3.2\"}\
 ",
 }
 local args={...}
