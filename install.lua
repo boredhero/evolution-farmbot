@@ -763,6 +763,7 @@ function Controller.run(cfg)
   local garden=Garden.new(state.garden);state.garden=garden.data
   local metrics=Metrics.new(state.metrics,U.now());state.metrics=metrics.data
   local dashboard=Dashboard.new(state.displays);state.displays=dashboard.views
+  local installedVersion=Dashboard.installedVersion()
   local dashboardError
   local world=W.new(cfg.center,cfg.radius)
   local jobs,workers,leases,obstacles,responses,cache={},{},{},{},{},{}
@@ -1017,7 +1018,7 @@ function Controller.run(cfg)
   local function displayModel()
     metrics:tick(U.now())
     local s=summary()
-    return {now=U.now(),active=state.active,world=world,center=cfg.center,radius=cfg.radius,
+    return {now=U.now(),active=state.active,world=world,center=cfg.center,radius=cfg.radius,version=installedVersion,
       plots=garden.data.plots,history=state.history,excluded=state.excluded,workers=workers,
       cache=cache,cacheHits=hits,metrics=metrics.data,sessionUptime=U.now()-metrics.started,
       scanAge=s.scanAge,scanError=scanError,freshFor=cfg.scanInterval*3}
@@ -1126,6 +1127,15 @@ local U=require('farm.lib.util')
 local C=require('farm.lib.crops')
 local F=require('farm.lib.frame')
 local D={};D.__index=D
+function D.installedVersion()
+  if not fs or not textutils then return 'unversioned' end
+  local h=fs.open('farm/version.json','r');if not h then return 'unversioned' end
+  local raw=h.readAll();h.close()
+  local ok,data=pcall(textutils.unserializeJSON,raw)
+  if ok and type(data)=='table' and type(data.version)=='string'
+    and data.version:match('^%d+%.%d+%.%d+$') then return data.version end
+  return 'unversioned'
+end
 local symbols={ready='R',growing='g',unknown='?',stale='?',debt='!',busy='*',unsupported='?',excluded='x'}
 local cropColors={wheat='4',carrots='1',potatoes='c',beetroots='e',cabbages='5',onions='0',tomatoes='e',
   rice='0',rice_panicles='0',canola='4',coffee='c',flax='3',hemp='d',sage_crop='9',cotton_plant='0',
@@ -1193,6 +1203,10 @@ function D:render(m,v,w,h)
   f:write(math.max(28,w-#health-1),1,health,m.active and '5' or '4','b')
   f:write(2,2,'Scan '..(m.scanAge<0 and 'pending' or m.scanAge..'s old')..' | growth = last inspection','0','b')
   button(f,hits,3,4,'[TEXT -]','scale',-0.5);button(f,hits,12,4,'[TEXT +]','scale',0.5)
+  if role=='stats' then
+    local version=m.version and ('v'..m.version) or 'unversioned'
+    f:write(math.max(22,w-#version-1),4,version,'0')
+  end
   if w<50 or h<28 then
     f:write(2,6,'Use TEXT - for more room.','4')
     f:write(2,8,'Plots '..count(m.plots)..' | workers '..count(m.workers))
@@ -2649,7 +2663,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.2.1\", \"ref\": \"v0.2.1\"}\
+["farm/version.json"] = "{\"version\": \"0.2.2\", \"ref\": \"v0.2.2\"}\
 ",
 }
 local args={...}

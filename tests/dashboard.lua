@@ -81,3 +81,17 @@ local mon={getTextScale=function() return realScale end,setTextScale=function(s)
   getSize=function() return 60,34 end,setCursorPos=function() end,blit=function() end}
 local fresh=D.new();fresh:draw(mon,'stats',m);eq(realScale,1)
 print('PASS readable scale-1 layout, crop-colored tiles, and persistent text-size touch controls')
+local oldFs,oldTextutils=fs,textutils
+local closed=false
+fs={open=function(path) eq(path,'farm/version.json');return {readAll=function() return 'json' end,close=function() closed=true end} end}
+textutils={unserializeJSON=function() return {version='0.2.2'} end}
+eq(D.installedVersion(),'0.2.2');assert(closed)
+textutils.unserializeJSON=function() error('Bad JSON') end;eq(D.installedVersion(),'unversioned')
+fs={open=function() return nil end};eq(D.installedVersion(),'unversioned')
+fs,textutils=oldFs,oldTextutils
+m.version='0.2.2'
+for _,size in ipairs({{60,34},{121,81}}) do
+  local versionFrame=d:render(m,{role='stats'},size[1],size[2]);validate(versionFrame)
+  assert(contains(versionFrame,'v0.2.2'));assert(contains(versionFrame,'[TEXT +]'))
+end
+print('PASS statistics shows installed metadata version at both text scales; missing/corrupt metadata is safe')

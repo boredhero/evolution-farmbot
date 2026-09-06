@@ -4,6 +4,15 @@ local U=require('farm.lib.util')
 local C=require('farm.lib.crops')
 local F=require('farm.lib.frame')
 local D={};D.__index=D
+function D.installedVersion()
+  if not fs or not textutils then return 'unversioned' end
+  local h=fs.open('farm/version.json','r');if not h then return 'unversioned' end
+  local raw=h.readAll();h.close()
+  local ok,data=pcall(textutils.unserializeJSON,raw)
+  if ok and type(data)=='table' and type(data.version)=='string'
+    and data.version:match('^%d+%.%d+%.%d+$') then return data.version end
+  return 'unversioned'
+end
 local symbols={ready='R',growing='g',unknown='?',stale='?',debt='!',busy='*',unsupported='?',excluded='x'}
 local cropColors={wheat='4',carrots='1',potatoes='c',beetroots='e',cabbages='5',onions='0',tomatoes='e',
   rice='0',rice_panicles='0',canola='4',coffee='c',flax='3',hemp='d',sage_crop='9',cotton_plant='0',
@@ -71,6 +80,10 @@ function D:render(m,v,w,h)
   f:write(math.max(28,w-#health-1),1,health,m.active and '5' or '4','b')
   f:write(2,2,'Scan '..(m.scanAge<0 and 'pending' or m.scanAge..'s old')..' | growth = last inspection','0','b')
   button(f,hits,3,4,'[TEXT -]','scale',-0.5);button(f,hits,12,4,'[TEXT +]','scale',0.5)
+  if role=='stats' then
+    local version=m.version and ('v'..m.version) or 'unversioned'
+    f:write(math.max(22,w-#version-1),4,version,'0')
+  end
   if w<50 or h<28 then
     f:write(2,6,'Use TEXT - for more room.','4')
     f:write(2,8,'Plots '..count(m.plots)..' | workers '..count(m.workers))

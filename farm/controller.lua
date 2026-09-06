@@ -19,6 +19,7 @@ function Controller.run(cfg)
   local garden=Garden.new(state.garden);state.garden=garden.data
   local metrics=Metrics.new(state.metrics,U.now());state.metrics=metrics.data
   local dashboard=Dashboard.new(state.displays);state.displays=dashboard.views
+  local installedVersion=Dashboard.installedVersion()
   local dashboardError
   local world=W.new(cfg.center,cfg.radius)
   local jobs,workers,leases,obstacles,responses,cache={},{},{},{},{},{}
@@ -273,7 +274,7 @@ function Controller.run(cfg)
   local function displayModel()
     metrics:tick(U.now())
     local s=summary()
-    return {now=U.now(),active=state.active,world=world,center=cfg.center,radius=cfg.radius,
+    return {now=U.now(),active=state.active,world=world,center=cfg.center,radius=cfg.radius,version=installedVersion,
       plots=garden.data.plots,history=state.history,excluded=state.excluded,workers=workers,
       cache=cache,cacheHits=hits,metrics=metrics.data,sessionUptime=U.now()-metrics.started,
       scanAge=s.scanAge,scanError=scanError,freshFor=cfg.scanInterval*3}

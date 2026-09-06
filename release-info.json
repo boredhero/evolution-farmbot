@@ -1,4 +1,4 @@
 {
-  "version": "0.2.1",
-  "notes": "Adds stop/exit commands to safely return from the controller to CraftOS; includes crop colors, readable displays and confirmed manifest updates."
+  "version": "0.2.2",
+  "notes": "Displays the installed FarmBot version on the statistics screen. No farming behavior changes."
 }
