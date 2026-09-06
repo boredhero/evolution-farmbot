@@ -1204,34 +1204,39 @@ function D:render(m,v,w,h)
   elseif m.scanAge>m.freshFor then health='SURVEY STALE' end
   f:write(math.max(28,w-#health-1),1,health,m.active and '5' or '4','b')
   f:write(2,2,'Scan '..(m.scanAge<0 and 'pending' or m.scanAge..'s old')..' | growth = last inspection','0','b')
-  button(f,hits,3,4,'[TEXT -]','scale',-0.5);button(f,hits,12,4,'[TEXT +]','scale',0.5)
   if role=='stats' then
     local version=m.version and ('v'..m.version) or 'unversioned'
     f:write(math.max(22,w-#version-1),4,version,'0')
   end
+  -- Controls live on the bottom rows: the top of a tall monitor is out of arm's reach in game.
+  local barH=role=='map' and 2 or 1
+  local hh=h-barH
+  local function bar(y) f:fill(1,y,w,1,' ','0','b');return 3 end
   if w<50 or h<28 then
     f:write(2,6,'Use TEXT - for more room.','4')
     f:write(2,8,'Plots '..count(m.plots)..' | workers '..count(m.workers))
     f:write(2,10,'Lifetime harvests '..m.metrics.harvests)
+    local x=bar(h);x=button(f,hits,x,h,'[TEXT -]','scale',-0.5);button(f,hits,x,h,'[TEXT +]','scale',0.5)
     return f,hits
   end
   if role=='map' then
     local layer=pickLayer(m,v)
-    local x=3
-    x=button(f,hits,x,3,'[Y-]','layer',-1)
-    x=button(f,hits,x,3,'[Y+]','layer',1)
-    x=button(f,hits,x,3,'[AUTO]','auto')
-    x=button(f,hits,x,3,'[Z-]','zoom',-1)
-    x=button(f,hits,x,3,'[Z+]','zoom',1)
-    button(f,hits,x,3,v.cache==false and '[CACHE OFF]' or '[CACHE ON]','cache')
-    x=24;x=button(f,hits,x,4,'[N]','pan','n');x=button(f,hits,x,4,'[S]','pan','s')
-    x=button(f,hits,x,4,'[W]','pan','w');button(f,hits,x,4,'[E]','pan','e')
+    local x=bar(hh+1)
+    x=button(f,hits,x,hh+1,'[Y-]','layer',-1)
+    x=button(f,hits,x,hh+1,'[Y+]','layer',1)
+    x=button(f,hits,x,hh+1,'[AUTO]','auto')
+    x=button(f,hits,x,hh+1,'[Z-]','zoom',-1)
+    x=button(f,hits,x,hh+1,'[Z+]','zoom',1)
+    x=button(f,hits,x,hh+1,v.cache==false and '[CACHE OFF]' or '[CACHE ON]','cache')
+    x=button(f,hits,x,hh+1,'[TEXT -]','scale',-0.5);button(f,hits,x,hh+1,'[TEXT +]','scale',0.5)
+    x=bar(h);x=button(f,hits,x,h,'[N]','pan','n');x=button(f,hits,x,h,'[S]','pan','s')
+    x=button(f,hits,x,h,'[W]','pan','w');button(f,hits,x,h,'[E]','pan','e')
     local span=math.max(9,math.ceil((m.radius*2+1)/(v.zoom or 1)))
     local cx,cz=v.cx or m.center.x,v.cz or m.center.z
     local minX,minZ=cx-math.floor(span/2),cz-math.floor(span/2)
-    local mw,mh=math.min(w-4,span*2),math.min(h-14,span)
-    local mx,my=math.floor((w-mw)/2)+1,7
-    f:write(3,5,('CROP Y=%d | NORTH ^ | %dx zoom | %dx%d blocks'):format(layer,v.zoom or 1,span,span),'0')
+    local mw,mh=math.min(w-4,span*2),math.min(hh-12,span)
+    local mx,my=math.floor((w-mw)/2)+1,5
+    f:write(3,3,('CROP Y=%d | NORTH ^ | %dx zoom | %dx%d blocks'):format(layer,v.zoom or 1,span,span),'0')
     f:box(mx-1,my-1,mw+2,mh+2,'SURVEY / '..count(m.cache)..' CACHED ROUTES')
     local function point(p)
       if p.x<minX or p.z<minZ or p.x>=minX+span or p.z>=minZ+span then return end
@@ -1295,22 +1300,22 @@ function D:render(m,v,w,h)
         if px then f:write(px,py,tostring(i%10),m.now-worker.seen<30 and '0' or '8',i%2==1 and 'b' or 'a') end
       end
     end
-    f:write(3,h-6,'COLOR = CROP TYPE | tap a tile for its name','0')
-    f:write(3,h-5,'R ripe  g growing  ? unseen/stale  ! gap  * busy','0')
+    f:write(3,hh-6,'COLOR = CROP TYPE | tap a tile for its name','0')
+    f:write(3,hh-5,'R ripe  g growing  ? unseen/stale  ! gap  * busy','0')
     local fleet={}
     for i,id in ipairs(ids) do
       local worker=m.workers[id]
       fleet[#fleet+1]=i..'=Turtle #'..id..' Y='..tostring(worker.pos and worker.pos.y or '?')
     end
-    f:write(3,h-4,table.concat(fleet,'  |  '),'3')
-    f:write(3,h-3,'Layers: '..table.concat((function() local a={};for _,r in ipairs(levels(m)) do a[#a+1]=r.y..' ('..r.n..')' end;return a end)(),' / '),'0')
+    f:write(3,hh-4,table.concat(fleet,'  |  '),'3')
+    f:write(3,hh-3,'Layers: '..table.concat((function() local a={};for _,r in ipairs(levels(m)) do a[#a+1]=r.y..' ('..r.n..')' end;return a end)(),' / '),'0')
     if v.selected and m.plots[v.selected] then
       local p=m.plots[v.selected];local history=m.history[v.selected]
-      f:write(3,h-2,(short(p.job.name)..' ['..D.classify(p,history,m)..']'):sub(1,w-4),D.cropColor(p.job.name))
+      f:write(3,hh-2,(short(p.job.name)..' ['..D.classify(p,history,m)..']'):sub(1,w-4),D.cropColor(p.job.name))
       local seen=history and history.observedAt and math.floor(m.now-history.observedAt)..'s ago' or 'never inspected'
       local age=history and history.observed and history.observed.state and history.observed.state.age
-      f:write(3,h-1,('%s | %s%s'):format(v.selected,seen,age and ' | age '..age..'/'..tostring(p.job.age or '?') or ''),'0')
-    else f:write(3,h-2,': cached route | . active route | Y-/Y+ floors','0') end
+      f:write(3,hh-1,('%s | %s%s'):format(v.selected,seen,age and ' | age '..age..'/'..tostring(p.job.age or '?') or ''),'0')
+    else f:write(3,hh-2,': cached route | . active route | Y-/Y+ floors','0') end
   else
     local metrics=m.metrics;local rows={};local live,gaps,ready,growing,unknown=0,0,0,0,0
     for k,p in pairs(m.plots) do
@@ -1324,7 +1329,6 @@ function D:render(m,v,w,h)
       elseif s=='unknown' or s=='stale' or s=='unsupported' then unknown=unknown+1;row.unknown=row.unknown+1 end
     end
     for name in pairs(metrics.byCrop) do if not rows[name] then rows[name]={name=name,live=0,gaps=0,ready=0,growing=0,unknown=0} end end
-    local x=3;x=button(f,hits,x,3,'[PREV CROPS]','page',-1);button(f,hits,x,3,'[NEXT CROPS]','page',1)
     local third=math.floor((w-5)/3)
     local cards={{'CONTROLLER UPTIME',duration(m.sessionUptime),'Recorded lifetime '..duration(metrics.uptime)},
       {'LIFETIME HARVESTS',tostring(metrics.harvests),'Replants '..metrics.replants..' | deferred '..metrics.deferred},
@@ -1349,8 +1353,8 @@ function D:render(m,v,w,h)
     end end
     if #ids==0 then f:write(3,y,'Waiting for paired workers...','0');y=y+1 end
     y=y+1
-    local footer=h>=45 and 11 or 5
-    local tableBottom=math.max(y+3,h-footer);local perPage=math.max(1,tableBottom-y-2)
+    local footer=hh>=45 and 11 or 5
+    local tableBottom=math.max(y+3,hh-footer);local perPage=math.max(1,tableBottom-y-2)
     local sorted={};for _,row in pairs(rows) do sorted[#sorted+1]=row end
     table.sort(sorted,function(a,b) if a.live+a.gaps~=b.live+b.gaps then return a.live+a.gaps>b.live+b.gaps end;return a.name<b.name end)
     local pages=math.max(1,math.ceil(#sorted/perPage));v.page=math.max(1,math.min(v.page or 1,pages))
@@ -1362,14 +1366,16 @@ function D:render(m,v,w,h)
       f:write(3,y,pad(short(row.name),nameWidth),D.cropColor(row.name))
       f:write(3+nameWidth,y,string.format(' %4d %3d %4d %4d %4d %5d',row.live,row.gaps,row.ready,row.growing,row.unknown,lifetime and lifetime.harvests or 0),row.gaps>0 and 'e' or '0');y=y+1
     end
-    f:write(3,h-footer+2,'RECENT ACTIVITY / harvest actions','3')
+    f:write(3,hh-footer+2,'RECENT ACTIVITY / harvest actions','3')
     local events=metrics.events
-    for i=0,(h>=45 and 4 or 0) do local event=events[#events-i];if event then
-      f:write(3,h-footer+3+i,(math.floor(m.now-event.time)..'s  '..event.outcome..'  '..short(event.name)..(event.detail and ' | '..event.detail or '')):sub(1,w-5),event.outcome=='deferred' and 'e' or '0')
+    for i=0,(hh>=45 and 4 or 0) do local event=events[#events-i];if event then
+      f:write(3,hh-footer+3+i,(math.floor(m.now-event.time)..'s  '..event.outcome..'  '..short(event.name)..(event.detail and ' | '..event.detail or '')):sub(1,w-5),event.outcome=='deferred' and 'e' or '0')
     end end
-    f:write(3,h-1,'? = unseen/stale | HV = lifetime harvest actions','0')
+    f:write(3,hh-1,'? = unseen/stale | HV = lifetime harvest actions','0')
+    local bx=bar(h);bx=button(f,hits,bx,h,'[PREV CROPS]','page',-1);bx=button(f,hits,bx,h,'[NEXT CROPS]','page',1)
+    bx=button(f,hits,bx,h,'[TEXT -]','scale',-0.5);button(f,hits,bx,h,'[TEXT +]','scale',0.5)
   end
-  if m.scanError then f:write(3,h,('SCANNER: '..m.scanError):sub(1,w-5),'e') end
+  if m.scanError then f:write(3,hh,('SCANNER: '..m.scanError):sub(1,w-5),'e') end
   return f,hits
 end
 function D:draw(mon,name,m)
@@ -2696,7 +2702,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.2.3\", \"ref\": \"v0.2.3\"}\
+["farm/version.json"] = "{\"version\": \"0.2.4\", \"ref\": \"v0.2.4\"}\
 ",
 }
 local args={...}

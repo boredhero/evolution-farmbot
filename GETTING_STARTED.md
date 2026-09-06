@@ -189,7 +189,7 @@ For crop coverage, limits and recovery details, see [README.md](README.md). GPLv
 
 Both screens now default to text scale **1**, twice the old character size. Crop tiles use crop-type colors; their symbols still mean `R` ripe when inspected, `g` growing when inspected, `?` unseen/stale, `!` replant gap, and `*` busy. Colors are reused across species (CC has 16 palette entries); tap a tile for its exact crop name. Stats use matching crop-name colors and paginate the list.
 
-Touch **TEXT - / TEXT +** on either screen to change its font size. On the map, **Z- / Z+** changes map zoom, **Y- / Y+** changes crop floor, and N/S/W/E pans. New map views start at 2x zoom; existing views keep their old zoom. Use **TEXT -** to reach scale 0.5 and **Z-** to reach 1x for the full-radius, individually resolved overview on a 6x6 map. Scale 1 trades overview detail for readability; nearby cells can merge when zoomed all the way out.
+All touch controls sit on the bottom one or two rows of each screen, so you can reach them standing on the floor without jumping or pillaring. Touch **TEXT - / TEXT +** on either screen to change its font size. On the map, **Z- / Z+** changes map zoom, **Y- / Y+** changes crop floor, and N/S/W/E pans. New map views start at 2x zoom; existing views keep their old zoom. Use **TEXT -** to reach scale 0.5 and **Z-** to reach 1x for the full-radius, individually resolved overview on a 6x6 map. Scale 1 trades overview detail for readability; nearby cells can merge when zoomed all the way out.
 
 Alternatively, at the controller prompt: `screen monitor_0 scale 1` (use the actual name from `screens`).
 

@@ -1,4 +1,4 @@
 {
-  "version": "0.2.3",
-  "notes": "Up/Down recalls and edits previous controller commands. Remembers 100 commands FIFO across restarts; skips blank lines and consecutive duplicates."
+  "version": "0.2.4",
+  "notes": "All touch controls moved to the bottom rows of each screen so they can be reached from the floor. The tactical map reclaims the vacated header rows, so its plotted area does not shrink."
 }

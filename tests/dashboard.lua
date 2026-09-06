@@ -81,6 +81,22 @@ local mon={getTextScale=function() return realScale end,setTextScale=function(s)
   getSize=function() return 60,34 end,setCursorPos=function() end,blit=function() end}
 local fresh=D.new();fresh:draw(mon,'stats',m);eq(realScale,1)
 print('PASS readable scale-1 layout, crop-colored tiles, and persistent text-size touch controls')
+local function reachable(role,w,h)
+  local _,hitList=d:render(m,{role=role,zoom=1},w,h)
+  local controls,rows=0,{}
+  for _,hit in ipairs(hitList) do if hit.action~='select' then
+    controls=controls+1;rows[hit.y]=true
+    assert(hit.y>=h-1,role..' control "'..hit.action..'" sits at row '..hit.y..' of '..h..'; controls must stay within reach of the bottom')
+  end end
+  assert(controls>0,'no controls rendered for '..role)
+  return controls,rows
+end
+local mapControls=reachable('map',121,81);assert(mapControls>=10)
+reachable('stats',164,81);reachable('stats',60,34);reachable('map',40,20)
+local actions={}
+for _,hit in ipairs(select(2,d:render(m,{role='map',zoom=1},121,81))) do actions[hit.action]=true end
+for _,needed in ipairs({'layer','auto','zoom','cache','pan','scale'}) do assert(actions[needed],'map lost its '..needed..' control') end
+print('PASS every clickable control renders on the bottom rows, within arm\'s reach of a tall monitor')
 local oldFs,oldTextutils=fs,textutils
 local closed=false
 fs={open=function(path) eq(path,'farm/version.json');return {readAll=function() return 'json' end,close=function() closed=true end} end}
