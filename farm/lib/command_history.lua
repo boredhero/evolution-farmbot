@@ -3,7 +3,7 @@
 local S=require('farm.lib.store')
 local H={};H.__index=H
 local PATH='farm/data/commands'
-local LIMIT=20
+local LIMIT=100
 local function append(entries,line)
   if type(line)~='string' then return false end
   line=line:match('^%s*(.-)%s*$')

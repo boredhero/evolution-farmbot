@@ -24,10 +24,10 @@ enter(h,'screen monitor_0 scale 1');enter(h,'   ');eq(writes,3)
 enter(h,'  status  ');eq(stored[4],'status');eq(writes,4)
 print('PASS blank lines and consecutive duplicates skipped; commands normalized for recall')
 local restarted=H.new();eq(#restarted.entries,4);eq(restarted.entries[4],'status')
-for i=1,110 do enter(restarted,'test '..i) end
-eq(#stored,20);eq(stored[1],'test 91');eq(stored[20],'test 110')
-local again=H.new();eq(#again.entries,20)
-print('PASS last 20 commands persist FIFO across restarts without growing indefinitely')
+for i=1,210 do enter(restarted,'test '..i) end
+eq(#stored,100);eq(stored[1],'test 111');eq(stored[100],'test 210')
+local again=H.new();eq(#again.entries,100)
+print('PASS last 100 commands persist FIFO across restarts without growing indefinitely')
 stored='invalid';eq(#H.new().entries,0)
 stored={'status',false,'',string.rep('x',513),'bad\nline','crops'}
 local repaired=H.new();eq(table.concat(repaired.entries,'|'),'status|crops')
