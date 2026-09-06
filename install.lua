@@ -754,6 +754,7 @@ local Seeds=require('farm.lib.seeds')
 local Garden=require('farm.lib.garden')
 local Metrics=require('farm.lib.metrics')
 local Dashboard=require('farm.dashboard')
+local CommandHistory=require('farm.lib.command_history')
 local Controller={}
 function Controller.run(cfg)
   U.openModem()
@@ -1063,10 +1064,11 @@ function Controller.run(cfg)
     end
   end
   local function consoleLoop()
+    local commandHistory=CommandHistory.new()
     print('FarmBot controller #'..os.getComputerID())
     print('Commands: status, crops, history, inventories, screens, screen NAME map|stats, start, pause, stop/exit, scan, allow ID, check update, update system, exclude/include X Y Z')
     while true do
-      write('farm> ');local line=read();local words={}
+      write('farm> ');local line=commandHistory:read();local words={}
       for word in line:gmatch('%S+') do words[#words+1]=word end
       local cmd=words[1]
       if cmd=='start' then stopping=false;state.active=true;save();print('Workers enabled.')
@@ -1416,6 +1418,37 @@ return function(data)
   for i=1,#data do a=(a+data:byte(i))%65521;b=(b+a)%65521 end
   return string.format('%08x',b*65536+a)
 end
+]=],
+["farm/lib/command_history.lua"] = [=[
+-- SPDX-License-Identifier: GPL-3.0-only
+-- Copyright (C) 2026 boredhero
+local S=require('farm.lib.store')
+local H={};H.__index=H
+local PATH='farm/data/commands'
+local LIMIT=20
+local function append(entries,line)
+  if type(line)~='string' then return false end
+  line=line:match('^%s*(.-)%s*$')
+  if line=='' or #line>512 or line:find('[\r\n]') or entries[#entries]==line then return false end
+  entries[#entries+1]=line
+  if #entries>LIMIT then table.remove(entries,1) end
+  return true
+end
+function H.new()
+  local saved=S.load(PATH,{})
+  local entries={}
+  if type(saved)=='table' then
+    for _,line in ipairs(saved) do append(entries,line) end
+  end
+  return setmetatable({entries=entries},H)
+end
+function H:read()
+  -- CraftOS handles Up/Down recall and editing when read receives a history list.
+  local line=read(nil,self.entries)
+  if append(self.entries,line) then S.save(PATH,self.entries) end
+  return line
+end
+return H
 ]=],
 ["farm/lib/crops.lua"] = [=[
 -- SPDX-License-Identifier: GPL-3.0-only
@@ -2663,7 +2696,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.2.2\", \"ref\": \"v0.2.2\"}\
+["farm/version.json"] = "{\"version\": \"0.2.3\", \"ref\": \"v0.2.3\"}\
 ",
 }
 local args={...}

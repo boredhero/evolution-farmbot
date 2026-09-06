@@ -195,6 +195,8 @@ Alternatively, at the controller prompt: `screen monitor_0 scale 1` (use the act
 
 ## Updating without reconfiguring
 
+On v0.2.3 or later, **Up / Down** at `farm>` recalls older/newer commands. Edit the recalled line normally and press Enter to execute it; arrows alone do not run anything. The last 20 commands are saved FIFO across restarts (new entries evict the oldest), excluding blank lines and consecutive duplicates. This command history is separate from the existing `history` command, which displays crop activity. Update-confirmation answers are not added to command history.
+
 On v0.2.1 or later, type **`stop`** or **`exit`** at the controller's `farm>` prompt to return to normal CraftOS without Ctrl+T. It pauses new farming, keeps the controller available while workers finish their jobs and dock, saves state, then exits. `status` shows what it is waiting for; `start` cancels a pending stop. `pause` is different: it leaves the controller/dashboard running. At CraftOS, use `farm start` to reopen the controller (still paused), then `start` at `farm>` when you want harvesting enabled.
 
 If you installed before v0.2.0, hold Ctrl+T on the **paused controller**, run the installer command once more, then run `reboot`. Your configuration, crop memory and statistics stay in place. This adds the updater; it does not require a Minecraft server restart. Existing GPS hosts can keep running the earlier compatible GPS program while you update the controller.

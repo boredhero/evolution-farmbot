@@ -1,4 +1,4 @@
 {
-  "version": "0.2.2",
-  "notes": "Displays the installed FarmBot version on the statistics screen. No farming behavior changes."
+  "version": "0.2.3",
+  "notes": "Up/Down recalls and edits previous controller commands. Remembers 20 commands FIFO across restarts; skips blank lines and consecutive duplicates."
 }

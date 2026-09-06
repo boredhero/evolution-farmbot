@@ -10,6 +10,7 @@ local Seeds=require('farm.lib.seeds')
 local Garden=require('farm.lib.garden')
 local Metrics=require('farm.lib.metrics')
 local Dashboard=require('farm.dashboard')
+local CommandHistory=require('farm.lib.command_history')
 local Controller={}
 function Controller.run(cfg)
   U.openModem()
@@ -319,10 +320,11 @@ function Controller.run(cfg)
     end
   end
   local function consoleLoop()
+    local commandHistory=CommandHistory.new()
     print('FarmBot controller #'..os.getComputerID())
     print('Commands: status, crops, history, inventories, screens, screen NAME map|stats, start, pause, stop/exit, scan, allow ID, check update, update system, exclude/include X Y Z')
     while true do
-      write('farm> ');local line=read();local words={}
+      write('farm> ');local line=commandHistory:read();local words={}
       for word in line:gmatch('%S+') do words[#words+1]=word end
       local cmd=words[1]
       if cmd=='start' then stopping=false;state.active=true;save();print('Workers enabled.')
