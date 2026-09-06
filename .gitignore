@@ -16,3 +16,6 @@
 # Reproducible, large local visual previews.
 /dashboard-*-preview.html
 luac.out
+
+# Agent worktrees
+.claude/
