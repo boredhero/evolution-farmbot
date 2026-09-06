@@ -1,4 +1,4 @@
 {
-  "version": "0.3.5",
-  "notes": "Worker setup now asks for the coordinates of the chest to put harvested items into and the chest to take fuel from, instead of requiring them to be built directly in front of and above the turtle. The turtle walks to each chest and faces it when it needs to, so the chests can be anywhere it can reach. It learns each block on the first visit and refuses to use it if it is later replaced. Existing installs keep working unchanged."
+  "version": "0.3.6",
+  "notes": "New farm station and farm stations commands on a worker. Move the output or fuel chest by giving new coordinates, without rerunning setup and without losing an unfinished harvest. Changing a station also forgets the block learned at the old spot, so swapping a chest for a barrel or an ME interface is accepted instead of refused."
 }

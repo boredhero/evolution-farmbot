@@ -1,13 +1,13 @@
 {
   "schema": 1,
-  "version": "0.3.5",
-  "ref": "v0.3.5",
-  "notes": "Worker setup now asks for the coordinates of the chest to put harvested items into and the chest to take fuel from, instead of requiring them to be built directly in front of and above the turtle. The turtle walks to each chest and faces it when it needs to, so the chests can be anywhere it can reach. It learns each block on the first visit and refuses to use it if it is later replaced. Existing installs keep working unchanged.",
+  "version": "0.3.6",
+  "ref": "v0.3.6",
+  "notes": "New farm station and farm stations commands on a worker. Move the output or fuel chest by giving new coordinates, without rerunning setup and without losing an unfinished harvest. Changing a station also forgets the block learned at the old spot, so swapping a chest for a barrel or an ME interface is accepted instead of refused.",
   "files": [
     {"path": "LICENSE", "size": 35149, "adler32": "f70779ec"},
     {"path": "NOTICE", "size": 691, "adler32": "ad64ed8d"},
     {"path": "check.lua", "size": 184, "adler32": "6d4c3c97"},
-    {"path": "farm.lua", "size": 1871, "adler32": "27d8844a"},
+    {"path": "farm.lua", "size": 3655, "adler32": "2fd6da24"},
     {"path": "farm/controller.lua", "size": 20005, "adler32": "e3be8deb"},
     {"path": "farm/dashboard.lua", "size": 18144, "adler32": "ffa57b3b"},
     {"path": "farm/lib/checksum.lua", "size": 369, "adler32": "68cb76fa"},

@@ -16,8 +16,41 @@ elseif command=='mode' then
   assert(args[2]=='live' or args[2]=='dry','Use farm mode live or farm mode dry')
   cfg.dryRun=args[2]~='live';S.save('farm/config',cfg)
   print('Mode saved: '..args[2]..'. Run farm start.');return
+elseif command=='stations' then
+  assert(cfg.role=='worker','Only workers use chest stations')
+  local saved=S.load('farm/data/worker',{})
+  for _,which in ipairs({'output','fuel'}) do
+    local at=(cfg.stations or {})[which]
+    local seen=(saved.stations or {})[which]
+    print(which..': '..(at and (at.x..','..at.y..','..at.z) or 'not set')..
+      (seen and ('  ('..seen..')') or ''))
+  end
+  print('Change with: farm station output|fuel X Y Z');return
+elseif command=='station' then
+  assert(cfg.role=='worker','Only workers use chest stations')
+  local which=args[2]
+  assert(which=='output' or which=='fuel','Use farm station output|fuel X Y Z, or farm station fuel none')
+  cfg.stations=cfg.stations or {}
+  if args[3]=='none' then
+    assert(which~='output','The output chest cannot be removed; give it new coordinates instead')
+    cfg.stations.fuel=nil;print('Fuel chest removed. Refuel by hand or from the chest above the parking cell.')
+  else
+    local x,y,z=tonumber(args[3]),tonumber(args[4]),tonumber(args[5])
+    assert(x and y and z,'Use farm station '..which..' X Y Z (F3 Targeted Block coordinates)')
+    cfg.stations[which]={x=math.floor(x),y=math.floor(y),z=math.floor(z)}
+    print(which..' chest moved to '..math.floor(x)..','..math.floor(y)..','..math.floor(z))
+  end
+  -- Forget the block remembered at the old spot so a swapped or relocated
+  -- chest is accepted instead of being refused as tampering.
+  local saved=S.load('farm/data/worker',{})
+  if saved.stations and saved.stations[which] then
+    saved.stations[which]=nil;S.save('farm/data/worker',saved)
+    print('Forgot the previous '..which..' block; it will be learned again on arrival.')
+  end
+  S.save('farm/config',cfg)
+  print('Run farm start.');return
 elseif command=='config' then print(textutils.serialize(cfg));return
-elseif command~='start' then print('Commands: setup [role], start, update, mode live|dry, inspect [up|down], config');return end
+elseif command~='start' then print('Commands: setup [role], start, update, mode live|dry, station output|fuel X Y Z, stations, inspect [up|down], config');return end
 local function run()
   if cfg.role=='gps' then shell.run('gps','host',tostring(cfg.pos.x),tostring(cfg.pos.y),tostring(cfg.pos.z))
   elseif cfg.role=='controller' then require('farm.controller').run(cfg)
