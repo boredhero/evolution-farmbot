@@ -1,14 +1,14 @@
 {
   "schema": 1,
-  "version": "0.2.0",
-  "ref": "v0.2.0",
-  "notes": "Readable dashboards with crop colors and text-size controls; confirmed, manifest-driven updates with backups.",
+  "version": "0.2.1",
+  "ref": "v0.2.1",
+  "notes": "Adds stop/exit commands to safely return from the controller to CraftOS; includes crop colors, readable displays and confirmed manifest updates.",
   "files": [
     {"path": "LICENSE", "size": 35149, "adler32": "f70779ec"},
     {"path": "NOTICE", "size": 691, "adler32": "ad64ed8d"},
     {"path": "check.lua", "size": 184, "adler32": "6d4c3c97"},
     {"path": "farm.lua", "size": 1871, "adler32": "27d8844a"},
-    {"path": "farm/controller.lua", "size": 17588, "adler32": "553f6491"},
+    {"path": "farm/controller.lua", "size": 18425, "adler32": "c25b7600"},
     {"path": "farm/dashboard.lua", "size": 15229, "adler32": "64e2e4f0"},
     {"path": "farm/lib/checksum.lua", "size": 369, "adler32": "68cb76fa"},
     {"path": "farm/lib/crops.lua", "size": 7510, "adler32": "25972d22"},

@@ -768,6 +768,7 @@ function Controller.run(cfg)
   local jobs,workers,leases,obstacles,responses,cache={},{},{},{},{},{}
   local scanAt,lastScan,scanError=0,0,'Waiting for first scan'
   local epoch=0;local hits=0;local scanBusy=false;local lastSave=0
+  local stopping=false
   local boot=tostring(U.now());local leaseSerial=0
   local snapshot=S.load('farm/data/map',nil)
   if snapshot and snapshot.radius==cfg.radius and U.equal(snapshot.center,cfg.center) then
@@ -1040,30 +1041,52 @@ function Controller.run(cfg)
       if dashboard:touch(name,x,y,displayModel()) then save() end
     end
   end
+  local function drainReason()
+    for _,lease in pairs(leases) do
+      if lease.untilTime>U.now() then return 'A worker still has a job.' end
+    end
+    for id,w in pairs(workers) do
+      if not w.pos or not w.dock or not U.equal(w.pos,w.dock) then
+        return 'Worker '..id..' is not confirmed at its dock.'
+      end
+    end
+  end
+  local function stopLoop()
+    while true do
+      if stopping and not drainReason() then
+        save()
+        print('FarmBot stopped. Back at CraftOS; run farm start to reopen.')
+        return
+      end
+      sleep(0.5)
+    end
+  end
   local function consoleLoop()
     print('FarmBot controller #'..os.getComputerID())
-    print('Commands: status, crops, history, inventories, screens, screen NAME map|stats, start, pause, scan, allow ID, check update, update system, exclude/include X Y Z')
+    print('Commands: status, crops, history, inventories, screens, screen NAME map|stats, start, pause, stop/exit, scan, allow ID, check update, update system, exclude/include X Y Z')
     while true do
       write('farm> ');local line=read();local words={}
       for word in line:gmatch('%S+') do words[#words+1]=word end
       local cmd=words[1]
-      if cmd=='start' then state.active=true;save();print('Workers enabled.')
+      if cmd=='start' then stopping=false;state.active=true;save();print('Workers enabled.')
+      elseif cmd=='stop' or cmd=='exit' or cmd=='quit' then
+        state.active=false;stopping=true;save()
+        print('Stopping: finish current jobs and dock, then return to CraftOS.')
+        local why=drainReason();if why then print(why..' Use status to check, or start to cancel stopping.') end
       elseif (cmd=='update' and words[2]=='system') or (cmd=='check' and words[2]=='update') then
+        stopping=false
         require('farm.updater').run({beforeInstall=function()
           state.active=false;save()
-          for _,lease in pairs(leases) do if lease.untilTime>U.now() then
-            return false,'Farm paused. A worker still has a job; wait for docking, then run update system again.'
-          end end
-          for id,w in pairs(workers) do
-            if not w.pos or not w.dock or not U.equal(w.pos,w.dock) then
-              return false,'Farm paused. Worker '..id..' is not confirmed at its dock; wait/check status, then retry.'
-            end
-          end
+          local why=drainReason()
+          if why then return false,'Farm paused. '..why..' Wait/check status, then run update system again.' end
+          stopping=false -- Do not let a prior stop request interrupt staging/install.
           return true
         end,beforeReboot=save})
       elseif cmd=='pause' then state.active=false;save();print('Workers will finish any replant and return to dock.')
       elseif cmd=='scan' then scanAt=0;print('Survey queued.')
-      elseif cmd=='status' then for _,l in ipairs(statusLines()) do print(l) end
+      elseif cmd=='status' then
+        for _,l in ipairs(statusLines()) do print(l) end
+        if stopping then print('Stop requested: '..(drainReason() or 'ready to exit')) end
       elseif cmd=='allow' and tonumber(words[2]) then
         cfg.allowed[tostring(tonumber(words[2]))]=true;S.save('farm/config',cfg);print('Paired worker '..words[2])
       elseif cmd=='exclude' or cmd=='include' then
@@ -1089,10 +1112,10 @@ function Controller.run(cfg)
         for k,h in pairs(state.history) do
           print(k..' '..tostring(h.name)..' '..tostring(h.outcome)..' '..tostring(h.detail or ''))
         end
-      else print('Use status, crops, start, pause, scan, allow ID, exclude X Y Z, include X Y Z.') end
+      else print('Use status, crops, start, pause, stop/exit, scan, allow ID, check update, update system.') end
     end
   end
-  parallel.waitForAny(networkLoop,scanLoop,displayLoop,consoleLoop,touchLoop)
+  parallel.waitForAny(networkLoop,scanLoop,displayLoop,consoleLoop,touchLoop,stopLoop)
 end
 return Controller
 ]=],
@@ -2626,7 +2649,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.2.0\", \"ref\": \"v0.2.0\"}\
+["farm/version.json"] = "{\"version\": \"0.2.1\", \"ref\": \"v0.2.1\"}\
 ",
 }
 local args={...}

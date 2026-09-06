@@ -285,7 +285,7 @@ Relevant upstream references:
 
 ## Release updates and readable displays
 
-Version **0.2.0** adds `check update` / `update system` at both the running controller prompt and CraftOS. These check [release.json](release.json), show notes, and require confirmation before updating the current device. New runtime modules are discovered automatically by the build and listed in the manifest. Config, crop memory, replant debts and statistics are not release targets. See the [update and screen controls guide](GETTING_STARTED.md#updating-without-reconfiguring).
+Version **0.2.1** includes `stop` / `exit` at the controller prompt: pause, let workers finish and dock, save, and return to CraftOS without a keyboard shortcut. It also includes v0.2.0's `check update` / `update system` at both the running controller prompt and CraftOS. These check [release.json](release.json), show notes, and require confirmation before updating the current device. New runtime modules are discovered automatically by the build and listed in the manifest. Config, crop memory, replant debts and statistics are not release targets. See the [update and screen controls guide](GETTING_STARTED.md#updating-without-reconfiguring).
 
 Displays now default to scale 1 for larger text, with touch controls for text size, crop-colored map tiles and matching stats labels. Growth status remains a separate symbol; a color never implies a ripe crop. Use scale 0.5 plus map zoom 1 for a fully resolved 65x65 overview on a 6x6 wall.
 
