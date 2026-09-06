@@ -11,6 +11,7 @@ local Garden=require('farm.lib.garden')
 local Metrics=require('farm.lib.metrics')
 local Dashboard=require('farm.dashboard')
 local CommandHistory=require('farm.lib.command_history')
+local Players=require('farm.lib.players')
 local Controller={}
 function Controller.run(cfg)
   U.openModem()
@@ -272,11 +273,22 @@ function Controller.run(cfg)
     for id,w in pairs(workers) do lines[#lines+1]=id..': '..(w.status or 'connected') end
     return lines
   end
+  local playerTracker=Players.new()
+  local playerList={}
+  -- Polled apart from drawing so detector latency never stalls a monitor redraw.
+  local function playerLoop()
+    while true do
+      local ok,list=pcall(function() return playerTracker:poll(cfg.center,cfg.radius) end)
+      playerList=ok and list or {}
+      sleep(0.5)
+    end
+  end
   local function displayModel()
     metrics:tick(U.now())
     local s=summary()
     return {now=U.now(),active=state.active,world=world,center=cfg.center,radius=cfg.radius,version=installedVersion,
       plots=garden.data.plots,history=state.history,excluded=state.excluded,workers=workers,
+      players=playerList,playerError=playerTracker.error,
       cache=cache,cacheHits=hits,metrics=metrics.data,sessionUptime=U.now()-metrics.started,
       scanAge=s.scanAge,scanError=scanError,freshFor=cfg.scanInterval*3}
   end
@@ -290,7 +302,8 @@ function Controller.run(cfg)
           if not ok then dashboardError=tostring(err) end
         end
       end
-      sleep(2)
+      -- Players move far between frames; only pay for a fast redraw while one is watching.
+      sleep(#playerList>0 and 0.5 or 2)
     end
   end
   local function touchLoop()
@@ -374,6 +387,6 @@ function Controller.run(cfg)
       else print('Use status, crops, start, pause, stop/exit, scan, allow ID, check update, update system.') end
     end
   end
-  parallel.waitForAny(networkLoop,scanLoop,displayLoop,consoleLoop,touchLoop,stopLoop)
+  parallel.waitForAny(networkLoop,scanLoop,displayLoop,playerLoop,consoleLoop,touchLoop,stopLoop)
 end
 return Controller

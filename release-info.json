@@ -1,4 +1,4 @@
 {
-  "version": "0.2.4",
-  "notes": "All touch controls moved to the bottom rows of each screen so they can be reached from the floor. The tactical map reclaims the vacated header rows, so its plotted area does not shrink."
+  "version": "0.3.0",
+  "notes": "Optional Player Detector overlay: nearby players appear on the tactical map as facing arrows, the player nearest the controller is highlighted as YOU ARE HERE, and the operations screen lists who is nearby. An Environment Detector keeps players from other dimensions off the map. Both peripherals are optional; without them the overlay stays empty."
 }

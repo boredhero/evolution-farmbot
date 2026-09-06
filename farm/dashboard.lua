@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: GPL-3.0-only
 -- Copyright (C) 2026 boredhero
 local U=require('farm.lib.util')
+local Players=require('farm.lib.players')
 local C=require('farm.lib.crops')
 local F=require('farm.lib.frame')
 local D={};D.__index=D
@@ -58,6 +59,11 @@ local function button(f,hits,x,y,text,action,value)
   f:write(x,y,text,'0','b');hits[#hits+1]={x=x,y=y,w=#text,h=1,action=action,value=value}
   return x+#text+1
 end
+local COMPASS={'S','W','N','E'}
+local function heading(yaw)
+  if type(yaw)~='number' then return '?' end
+  return COMPASS[math.floor(((yaw%360)+45)/90)%4+1]
+end
 local function levels(m)
   local found={};for _,p in pairs(m.plots) do found[p.job.pos.y]=(found[p.job.pos.y] or 0)+1 end
   local rows={};for y,n in pairs(found) do rows[#rows+1]={y=y,n=n} end
@@ -109,7 +115,7 @@ function D:render(m,v,w,h)
     local span=math.max(9,math.ceil((m.radius*2+1)/(v.zoom or 1)))
     local cx,cz=v.cx or m.center.x,v.cz or m.center.z
     local minX,minZ=cx-math.floor(span/2),cz-math.floor(span/2)
-    local mw,mh=math.min(w-4,span*2),math.min(hh-12,span)
+    local mw,mh=math.min(w-4,span*2),math.min(hh-13,span)
     local mx,my=math.floor((w-mw)/2)+1,5
     f:write(3,3,('CROP Y=%d | NORTH ^ | %dx zoom | %dx%d blocks'):format(layer,v.zoom or 1,span,span),'0')
     f:box(mx-1,my-1,mw+2,mh+2,'SURVEY / '..count(m.cache)..' CACHED ROUTES')
@@ -175,8 +181,24 @@ function D:render(m,v,w,h)
         if px then f:write(px,py,tostring(i%10),m.now-worker.seen<30 and '0' or '8',i%2==1 and 'b' or 'a') end
       end
     end
+    local viewer,nearby=nil,0
+    for _,player in ipairs(m.players or {}) do
+      nearby=nearby+1
+      if player.viewer then viewer=player end
+      if player.y==layer or player.y==layer+1 then
+        local px,py=point(player)
+        if px then f:write(px,py,Players.arrow(player.yaw),'f',player.viewer and '5' or '2') end
+      end
+    end
+    if viewer then
+      local drop=viewer.y-layer
+      local where=drop==0 and '' or (' | '..math.abs(drop)..(drop>0 and ' above' or ' below')..' this floor')
+      f:write(3,hh-7,('YOU ARE HERE %s %s facing %s%s%s'):format(Players.arrow(viewer.yaw),U.key(viewer),
+        heading(viewer.yaw),where,nearby>1 and (' | '..(nearby-1)..' other nearby') or ''):sub(1,w-4),'f','5')
+    elseif m.playerError then f:write(3,hh-7,'PLAYERS: '..m.playerError,'e')
+    elseif m.players then f:write(3,hh-7,'No players in range','8') end
     f:write(3,hh-6,'COLOR = CROP TYPE | tap a tile for its name','0')
-    f:write(3,hh-5,'R ripe  g growing  ? unseen/stale  ! gap  * busy','0')
+    f:write(3,hh-5,'R ripe g growing ? unseen ! gap * busy ^v<> player','0')
     local fleet={}
     for i,id in ipairs(ids) do
       local worker=m.workers[id]
@@ -227,6 +249,15 @@ function D:render(m,v,w,h)
       f:write(3,y,('#%s %s  %s  fuel=%s  %s'):format(id,online and 'ONLINE ' or 'OFFLINE',worker.pos and U.key(worker.pos) or '?',tostring(worker.fuel or '?'),worker.status or ''):sub(1,w-5),online and '0' or '8');y=y+1
     end end
     if #ids==0 then f:write(3,y,'Waiting for paired workers...','0');y=y+1 end
+    local online={}
+    for _,player in ipairs(m.players or {}) do
+      online[#online+1]=(player.viewer and '*' or '')..player.name..' '..U.key(player)
+    end
+    if m.playerError then f:write(3,y,'PLAYERS NEARBY / '..m.playerError,'e');y=y+1
+    elseif #online>0 then
+      f:write(3,y,('PLAYERS NEARBY / %d / * = at the screens'):format(#online),'3');y=y+1
+      f:write(3,y,table.concat(online,'  |  '):sub(1,w-5),'0');y=y+1
+    end
     y=y+1
     local footer=hh>=45 and 11 or 5
     local tableBottom=math.max(y+3,hh-footer);local perPage=math.max(1,tableBottom-y-2)

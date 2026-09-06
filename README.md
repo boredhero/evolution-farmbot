@@ -55,6 +55,7 @@ Use your existing advanced computer as the controller and your two turtles as wo
 - 1 shared seed-bank inventory. A double chest works initially; a larger inventory with CC inventory methods is useful for many MystAg types. There is no per-seed filter configuration.
 - 66 Advanced Monitor blocks: a 6-wide × 6-high map wall and a 6-wide × 5-high statistics wall. Leave at least a one-block gap between walls so they do not attempt to merge. Larger walls work too. Ordinary monitors lack the color/touch interface used here.
 - 6 wired modems plus networking cable: one at the controller, one at the seed bank, one at each dock's seed buffer, and one at each assembled monitor wall. Enable peripheral sharing by right-clicking the peripheral modems.
+- *Optional:* 1 Player Detector and 1 Environment Detector on the controller's wired network, for the live player overlay. The Player Detector supplies player positions; the Environment Detector tells the controller which dimension it is in, so players in the Mining Dimension are not drawn onto the overworld map. Without them the farm runs exactly as before and the overlay stays empty.
 - 2 ME Import Buses on the **output** chests. Coal/charcoal in the fuel chests; ME Export Buses can keep these fueled automatically.
 
 Do **not** attach ME Import Buses to the seed bank or its delivery buffers: those seeds are reserved for planting. The software exports surplus through the output chest instead.
@@ -198,6 +199,7 @@ Use the actual peripheral names printed by `screens`, not assumed IDs. Assignmen
 - Top-down survey of the selected crop-height layer, with terrain/bed context.
 - Crop markers distinguish last-seen ready/growing, unknown/stale, unsupported, excluded, in-flight operations and remembered replant gaps.
 - Numbered turtle markers and current issued routes; gray cached-route overlay with an on/off touch control. Cached routes are historical successful plans, not guarantees that a path remains clear. The overlay is capped at 16,000 visited nodes per frame.
+- Nearby players as facing arrows (`^ v < >` derived from yaw, north-up). The player nearest the controller is highlighted and captioned `YOU ARE HERE`, on the assumption that whoever is closest to the controller is the person standing at the screens; the caption reports how many floors away they are when they are not on the displayed layer. Requires a Player Detector, and reports exact coordinates only where the server leaves `enablePlayerPosRandomError` off.
 - Touch controls for detected floors, zoom, panning, reset-to-auto, and selecting a crop for coordinates and observation details. Indoor and upper-floor beds are separate layers rather than being misleadingly stacked on the same map.
 
 ### Operations wall

@@ -755,6 +755,7 @@ local Garden=require('farm.lib.garden')
 local Metrics=require('farm.lib.metrics')
 local Dashboard=require('farm.dashboard')
 local CommandHistory=require('farm.lib.command_history')
+local Players=require('farm.lib.players')
 local Controller={}
 function Controller.run(cfg)
   U.openModem()
@@ -1016,11 +1017,22 @@ function Controller.run(cfg)
     for id,w in pairs(workers) do lines[#lines+1]=id..': '..(w.status or 'connected') end
     return lines
   end
+  local playerTracker=Players.new()
+  local playerList={}
+  -- Polled apart from drawing so detector latency never stalls a monitor redraw.
+  local function playerLoop()
+    while true do
+      local ok,list=pcall(function() return playerTracker:poll(cfg.center,cfg.radius) end)
+      playerList=ok and list or {}
+      sleep(0.5)
+    end
+  end
   local function displayModel()
     metrics:tick(U.now())
     local s=summary()
     return {now=U.now(),active=state.active,world=world,center=cfg.center,radius=cfg.radius,version=installedVersion,
       plots=garden.data.plots,history=state.history,excluded=state.excluded,workers=workers,
+      players=playerList,playerError=playerTracker.error,
       cache=cache,cacheHits=hits,metrics=metrics.data,sessionUptime=U.now()-metrics.started,
       scanAge=s.scanAge,scanError=scanError,freshFor=cfg.scanInterval*3}
   end
@@ -1034,7 +1046,8 @@ function Controller.run(cfg)
           if not ok then dashboardError=tostring(err) end
         end
       end
-      sleep(2)
+      -- Players move far between frames; only pay for a fast redraw while one is watching.
+      sleep(#playerList>0 and 0.5 or 2)
     end
   end
   local function touchLoop()
@@ -1118,7 +1131,7 @@ function Controller.run(cfg)
       else print('Use status, crops, start, pause, stop/exit, scan, allow ID, check update, update system.') end
     end
   end
-  parallel.waitForAny(networkLoop,scanLoop,displayLoop,consoleLoop,touchLoop,stopLoop)
+  parallel.waitForAny(networkLoop,scanLoop,displayLoop,playerLoop,consoleLoop,touchLoop,stopLoop)
 end
 return Controller
 ]=],
@@ -1126,6 +1139,7 @@ return Controller
 -- SPDX-License-Identifier: GPL-3.0-only
 -- Copyright (C) 2026 boredhero
 local U=require('farm.lib.util')
+local Players=require('farm.lib.players')
 local C=require('farm.lib.crops')
 local F=require('farm.lib.frame')
 local D={};D.__index=D
@@ -1183,6 +1197,11 @@ local function button(f,hits,x,y,text,action,value)
   f:write(x,y,text,'0','b');hits[#hits+1]={x=x,y=y,w=#text,h=1,action=action,value=value}
   return x+#text+1
 end
+local COMPASS={'S','W','N','E'}
+local function heading(yaw)
+  if type(yaw)~='number' then return '?' end
+  return COMPASS[math.floor(((yaw%360)+45)/90)%4+1]
+end
 local function levels(m)
   local found={};for _,p in pairs(m.plots) do found[p.job.pos.y]=(found[p.job.pos.y] or 0)+1 end
   local rows={};for y,n in pairs(found) do rows[#rows+1]={y=y,n=n} end
@@ -1234,7 +1253,7 @@ function D:render(m,v,w,h)
     local span=math.max(9,math.ceil((m.radius*2+1)/(v.zoom or 1)))
     local cx,cz=v.cx or m.center.x,v.cz or m.center.z
     local minX,minZ=cx-math.floor(span/2),cz-math.floor(span/2)
-    local mw,mh=math.min(w-4,span*2),math.min(hh-12,span)
+    local mw,mh=math.min(w-4,span*2),math.min(hh-13,span)
     local mx,my=math.floor((w-mw)/2)+1,5
     f:write(3,3,('CROP Y=%d | NORTH ^ | %dx zoom | %dx%d blocks'):format(layer,v.zoom or 1,span,span),'0')
     f:box(mx-1,my-1,mw+2,mh+2,'SURVEY / '..count(m.cache)..' CACHED ROUTES')
@@ -1300,8 +1319,24 @@ function D:render(m,v,w,h)
         if px then f:write(px,py,tostring(i%10),m.now-worker.seen<30 and '0' or '8',i%2==1 and 'b' or 'a') end
       end
     end
+    local viewer,nearby=nil,0
+    for _,player in ipairs(m.players or {}) do
+      nearby=nearby+1
+      if player.viewer then viewer=player end
+      if player.y==layer or player.y==layer+1 then
+        local px,py=point(player)
+        if px then f:write(px,py,Players.arrow(player.yaw),'f',player.viewer and '5' or '2') end
+      end
+    end
+    if viewer then
+      local drop=viewer.y-layer
+      local where=drop==0 and '' or (' | '..math.abs(drop)..(drop>0 and ' above' or ' below')..' this floor')
+      f:write(3,hh-7,('YOU ARE HERE %s %s facing %s%s%s'):format(Players.arrow(viewer.yaw),U.key(viewer),
+        heading(viewer.yaw),where,nearby>1 and (' | '..(nearby-1)..' other nearby') or ''):sub(1,w-4),'f','5')
+    elseif m.playerError then f:write(3,hh-7,'PLAYERS: '..m.playerError,'e')
+    elseif m.players then f:write(3,hh-7,'No players in range','8') end
     f:write(3,hh-6,'COLOR = CROP TYPE | tap a tile for its name','0')
-    f:write(3,hh-5,'R ripe  g growing  ? unseen/stale  ! gap  * busy','0')
+    f:write(3,hh-5,'R ripe g growing ? unseen ! gap * busy ^v<> player','0')
     local fleet={}
     for i,id in ipairs(ids) do
       local worker=m.workers[id]
@@ -1352,6 +1387,15 @@ function D:render(m,v,w,h)
       f:write(3,y,('#%s %s  %s  fuel=%s  %s'):format(id,online and 'ONLINE ' or 'OFFLINE',worker.pos and U.key(worker.pos) or '?',tostring(worker.fuel or '?'),worker.status or ''):sub(1,w-5),online and '0' or '8');y=y+1
     end end
     if #ids==0 then f:write(3,y,'Waiting for paired workers...','0');y=y+1 end
+    local online={}
+    for _,player in ipairs(m.players or {}) do
+      online[#online+1]=(player.viewer and '*' or '')..player.name..' '..U.key(player)
+    end
+    if m.playerError then f:write(3,y,'PLAYERS NEARBY / '..m.playerError,'e');y=y+1
+    elseif #online>0 then
+      f:write(3,y,('PLAYERS NEARBY / %d / * = at the screens'):format(#online),'3');y=y+1
+      f:write(3,y,table.concat(online,'  |  '):sub(1,w-5),'0');y=y+1
+    end
     y=y+1
     local footer=hh>=45 and 11 or 5
     local tableBottom=math.max(y+3,hh-footer);local perPage=math.max(1,tableBottom-y-2)
@@ -1915,6 +1959,68 @@ function P.valid(world,start,path,avoid)
   return true
 end
 return P
+]=],
+["farm/lib/players.lua"] = [=[
+-- SPDX-License-Identifier: GPL-3.0-only
+-- Copyright (C) 2026 boredhero
+-- Advanced Peripherals player tracking. Absent hardware is not an error: the
+-- overlay simply stays empty so every existing install keeps working untouched.
+local U=require('farm.lib.util')
+local Players={};Players.__index=Players
+local PAD=8
+-- Yaw is degrees clockwise from south, so south sorts first here.
+local ARROWS={'v','<','^','>'}
+function Players.arrow(yaw)
+  if type(yaw)~='number' then return '@' end
+  return ARROWS[math.floor(((yaw%360)+45)/90)%4+1]
+end
+function Players.new(find,dimension)
+  return setmetatable({find=find or peripheral.find,dimension=dimension,list={},error=nil,checked=nil},Players)
+end
+function Players:detector()
+  local ok,detector=pcall(self.find,'player_detector')
+  if ok then return detector end
+end
+-- The controller cannot ask which dimension it occupies, so an Environment
+-- Detector supplies it once. Without one we cannot filter and show everyone.
+function Players:home()
+  if self.dimension~=nil or self.checked then return self.dimension end
+  self.checked=true
+  local ok,env=pcall(self.find,'environment_detector')
+  if ok and env and env.getDimension then
+    local got,name=pcall(env.getDimension)
+    if got and type(name)=='string' then self.dimension=name end
+  end
+  return self.dimension
+end
+function Players:poll(center,radius)
+  local detector=self:detector()
+  if not detector then self.list={};self.error=nil;return self.list end
+  local home=self:home()
+  local ok,names=pcall(detector.getPlayersInRange,math.floor(radius+PAD))
+  if not ok or type(names)~='table' then
+    self.error='player detector unavailable';self.list={};return self.list
+  end
+  local found={}
+  for _,name in ipairs(names) do
+    local got,pos=pcall(detector.getPlayerPos,name)
+    -- getPlayerPos is disabled by config on some servers; degrade to names only.
+    if got and type(pos)=='table' and type(pos.x)=='number' and type(pos.z)=='number' then
+      if not home or not pos.dimension or pos.dimension==home then
+        local p={name=name,x=math.floor(pos.x),y=math.floor(pos.y or center.y),z=math.floor(pos.z),
+          yaw=pos.yaw,dimension=pos.dimension}
+        p.away=U.distance(p,center)
+        found[#found+1]=p
+      end
+    end
+  end
+  table.sort(found,function(a,b) if a.away~=b.away then return a.away<b.away end;return a.name<b.name end)
+  -- Nearest to the controller is whoever is standing at the screens with it.
+  if found[1] then found[1].viewer=true end
+  self.error=nil;self.list=found
+  return self.list
+end
+return Players
 ]=],
 ["farm/lib/seeds.lua"] = [=[
 -- SPDX-License-Identifier: GPL-3.0-only
@@ -2702,7 +2808,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.2.4\", \"ref\": \"v0.2.4\"}\
+["farm/version.json"] = "{\"version\": \"0.3.0\", \"ref\": \"v0.3.0\"}\
 ",
 }
 local args={...}
