@@ -2,7 +2,7 @@
 
 Autonomous CC:Tweaked farming for FTB Evolution 1.39.0 / Minecraft 1.21.1.
 
-The implementation and single-file installer are ready for in-game commissioning. Automated tests exercise the logic and mocked CC peripherals; **this has not yet been tested with physical turtles on the live server**. No farming programs have been uploaded to a live computer ID yet.
+The controller's live scan and both monitor dashboards have been commissioned on the server. Automated tests exercise the farming logic and mocked CC peripherals; **harvesting has not yet been tested with physical turtles on the live server**. Start a new worker in inspection-only mode.
 
 **New to ComputerCraft? Start with [the beginner setup guide](GETTING_STARTED.md).**
 
@@ -282,3 +282,11 @@ Relevant upstream references:
 - [Wired inventory transfers](https://tweaked.cc/generic_peripheral/inventory.html)
 - [Maintainer discussion of the 1.21 turtle-use tag regression](https://github.com/cc-tweaked/CC-Tweaked/issues/2011) and [the corresponding fix](https://github.com/cc-tweaked/CC-Tweaked/commit/4710ee5bcc4c8d256d6dfe477450911a00915b60)
 - [BWG's upstream 1.21.1 project](https://github.com/Potion-Studios/Oh-The-Biomes-Weve-Gone/tree/1.21.1)
+
+## Release updates and readable displays
+
+Version **0.2.0** adds `check update` / `update system` at both the running controller prompt and CraftOS. These check [release.json](release.json), show notes, and require confirmation before updating the current device. New runtime modules are discovered automatically by the build and listed in the manifest. Config, crop memory, replant debts and statistics are not release targets. See the [update and screen controls guide](GETTING_STARTED.md#updating-without-reconfiguring).
+
+Displays now default to scale 1 for larger text, with touch controls for text size, crop-colored map tiles and matching stats labels. Growth status remains a separate symbol; a color never implies a ripe crop. Use scale 0.5 plus map zoom 1 for a fully resolved 65x65 overview on a 6x6 wall.
+
+Release workflow: edit `release-info.json` (bump the semantic version), run `bash tests/check.sh` to regenerate `release.json` and `install.lua`, commit all source and generated artifacts, and create/push the matching `vX.Y.Z` tag alongside main. Never move a published version tag. Runtime Lua files under `farm/` are auto-discovered; generated/user data and development tests are not distributed. A manifest points exclusively at its matching release tag, so a check cannot combine files from different main commits.

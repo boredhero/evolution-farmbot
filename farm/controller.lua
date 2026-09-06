@@ -298,12 +298,25 @@ function Controller.run(cfg)
   end
   local function consoleLoop()
     print('FarmBot controller #'..os.getComputerID())
-    print('Commands: status, crops, history, inventories, screens, screen NAME map|stats, start, pause, scan, allow ID, exclude/include X Y Z')
+    print('Commands: status, crops, history, inventories, screens, screen NAME map|stats, start, pause, scan, allow ID, check update, update system, exclude/include X Y Z')
     while true do
       write('farm> ');local line=read();local words={}
       for word in line:gmatch('%S+') do words[#words+1]=word end
       local cmd=words[1]
       if cmd=='start' then state.active=true;save();print('Workers enabled.')
+      elseif (cmd=='update' and words[2]=='system') or (cmd=='check' and words[2]=='update') then
+        require('farm.updater').run({beforeInstall=function()
+          state.active=false;save()
+          for _,lease in pairs(leases) do if lease.untilTime>U.now() then
+            return false,'Farm paused. A worker still has a job; wait for docking, then run update system again.'
+          end end
+          for id,w in pairs(workers) do
+            if not w.pos or not w.dock or not U.equal(w.pos,w.dock) then
+              return false,'Farm paused. Worker '..id..' is not confirmed at its dock; wait/check status, then retry.'
+            end
+          end
+          return true
+        end,beforeReboot=save})
       elseif cmd=='pause' then state.active=false;save();print('Workers will finish any replant and return to dock.')
       elseif cmd=='scan' then scanAt=0;print('Survey queued.')
       elseif cmd=='status' then for _,l in ipairs(statusLines()) do print(l) end
@@ -323,6 +336,11 @@ function Controller.run(cfg)
         end
       elseif cmd=='screen' and words[2] and (words[3]=='map' or words[3]=='stats') then
         dashboard:view(words[2]).role=words[3];dashboard.frames[words[2]]=nil;save();print('Display assignment saved.')
+      elseif cmd=='screen' and words[2] and words[3]=='scale' then
+        local scale=tonumber(words[4])
+        if scale and scale>=0.5 and scale<=2 and scale*2%1==0 then
+          dashboard:view(words[2]).scale=scale;dashboard.frames[words[2]]=nil;save();print('Text scale saved.')
+        else print('Use screen NAME scale 0.5|1|1.5|2') end
       elseif cmd=='history' then
         for k,h in pairs(state.history) do
           print(k..' '..tostring(h.name)..' '..tostring(h.outcome)..' '..tostring(h.detail or ''))

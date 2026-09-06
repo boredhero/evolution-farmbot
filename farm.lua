@@ -3,6 +3,7 @@
 local args={...}
 local S=require('farm.lib.store')
 local command=args[1] or 'start'
+if command=='update' or (command=='check' and args[2]=='update') then require('farm.updater').run();return end
 if command=='setup' then require('farm.setup').run(args[2]);return end
 local cfg=S.load('farm/config',nil)
 if not cfg then require('farm.setup').run(args[2]);return end
@@ -16,7 +17,7 @@ elseif command=='mode' then
   cfg.dryRun=args[2]~='live';S.save('farm/config',cfg)
   print('Mode saved: '..args[2]..'. Run farm start.');return
 elseif command=='config' then print(textutils.serialize(cfg));return
-elseif command~='start' then print('Commands: setup [role], start, mode live|dry, inspect [up|down], config');return end
+elseif command~='start' then print('Commands: setup [role], start, update, mode live|dry, inspect [up|down], config');return end
 local function run()
   if cfg.role=='gps' then shell.run('gps','host',tostring(cfg.pos.x),tostring(cfg.pos.y),tostring(cfg.pos.z))
   elseif cfg.role=='controller' then require('farm.controller').run(cfg)

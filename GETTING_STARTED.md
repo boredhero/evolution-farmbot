@@ -184,3 +184,28 @@ Stop at that step and record the exact message plus the computer/turtle ID. Do n
 If the download command fails, download [install.lua](https://raw.githubusercontent.com/boredhero/evolution-farmbot/main/install.lua) in your desktop browser, drag it into the open in-game terminal, then type `install`.
 
 For crop coverage, limits and recovery details, see [README.md](README.md). GPLv3 license text is included in [LICENSE](LICENSE) and in the installer.
+
+## Easier-to-read screens (v0.2.0)
+
+Both screens now default to text scale **1**, twice the old character size. Crop tiles use crop-type colors; their symbols still mean `R` ripe when inspected, `g` growing when inspected, `?` unseen/stale, `!` replant gap, and `*` busy. Colors are reused across species (CC has 16 palette entries); tap a tile for its exact crop name. Stats use matching crop-name colors and paginate the list.
+
+Touch **TEXT - / TEXT +** on either screen to change its font size. On the map, **Z- / Z+** changes map zoom, **Y- / Y+** changes crop floor, and N/S/W/E pans. New map views start at 2x zoom; existing views keep their old zoom. Use **TEXT -** to reach scale 0.5 and **Z-** to reach 1x for the full-radius, individually resolved overview on a 6x6 map. Scale 1 trades overview detail for readability; nearby cells can merge when zoomed all the way out.
+
+Alternatively, at the controller prompt: `screen monitor_0 scale 1` (use the actual name from `screens`).
+
+## Updating without reconfiguring
+
+If you installed before v0.2.0, hold Ctrl+T on the **paused controller**, run the installer command once more, then run `reboot`. Your configuration, crop memory and statistics stay in place. This adds the updater; it does not require a Minecraft server restart. Existing GPS hosts can keep running the earlier compatible GPS program while you update the controller.
+
+From then on, either of these commands works at the controller's `farm>` prompt **or** at a stopped computer's CraftOS prompt:
+
+```text
+check update
+update system
+```
+
+Both check the repository's `release.json`, display installed/available versions and release notes, and ask `Install ...? [y/N]`. Nothing is installed without **yes**. All files listed by the release are downloaded, including new modules. Downloads use a version tag, not a moving mix of files from main. The updater checks file sizes, corruption checksums and Lua syntax, stages the release, backs up the old program, and then installs. A successful update reboots **that CC computer only**.
+
+The running controller pauses farming after confirmation and refuses to install until known workers are at their docks and have no active job leases. If it tells you to wait, let them return and run the command again. When updating a turtle or using the stopped CraftOS prompt, first pause farming on the controller and let every turtle finish its work and dock. Update devices individually; this is not a fleet-wide rollout. Run `start` on the controller when ready to resume.
+
+Backups remain under `farm/install-backups/update-*`. Handled installation failures roll back changed program files; interrupted transactions have a recovery journal checked at startup. If damage prevents startup/recovery code itself from loading, retain the backups and journal and ask for help—do not delete farm data. Old, unlisted modules are deliberately not deleted automatically. Checksums detect accidental corruption, not a malicious repository owner; the trusted source is this repository over HTTPS.

@@ -29,7 +29,7 @@ print('PASS two monitor roles, floor switching, crop map and route overlay contr
 local stats=d:render(m,d:view('monitor_1'),164,81);validate(stats)
 assert(contains(stats,'OPERATIONS'));assert(contains(stats,'LIFETIME HARVESTS'));assert(contains(stats,'14832'))
 assert(contains(stats,'cottonly:cotton_plant'));assert(contains(stats,'MC:wheat'))
-for _,size in ipairs({{51,19},{80,36},{120,50},{205,68},{164,81}}) do
+for _,size in ipairs({{51,19},{60,34},{60,40},{80,36},{120,50},{205,68},{164,81}}) do
   for _,role in ipairs({'map','stats'}) do validate(d:render(m,{role=role},size[1],size[2])) end
 end
 print('PASS responsive frames, live counts and lifetime per-crop statistics')
@@ -61,3 +61,23 @@ local page1=d:render(m,{role='stats',page=1},164,81)
 local page2=d:render(m,{role='stats',page=2},164,81)
 assert(contains(page1,'PAGE 1 OF'));assert(contains(page2,'PAGE 2 OF'))
 print('PASS many crop types paginate instead of disappearing off screen')
+local compact,compactHits=d:render(m,{role='stats'},60,34)
+assert(contains(compact,'OPERATIONS'));assert(contains(compact,'LIFETIME HARVESTS'));assert(contains(compact,'CROP COUNTS'))
+assert(not contains(compact,'Use TEXT -'))
+local colorMap,colorHits=d:render(m,{role='map',zoom=1},121,81)
+local colored=0
+for _,hit in ipairs(colorHits) do if hit.action=='select' then
+  local _,_,bg=colorMap:row(hit.y);assert(bg:sub(hit.x,hit.x)~='f');colored=colored+1
+end end
+assert(colored>100)
+eq(D.cropColor('minecraft:wheat'),'4');eq(D.cropColor('minecraft:carrots'),'1')
+eq(D.cropColor('newmod:new_crop'),D.cropColor('newmod:new_crop'))
+d.hits.monitor_1=compactHits
+for _,hit in ipairs(compactHits) do if hit.action=='scale' and hit.value==0.5 then
+  assert(d:touch('monitor_1',hit.x,hit.y,m));eq(d.views.monitor_1.scale,1.5)
+end end
+local realScale=0.5
+local mon={getTextScale=function() return realScale end,setTextScale=function(s) realScale=s end,
+  getSize=function() return 60,34 end,setCursorPos=function() end,blit=function() end}
+local fresh=D.new();fresh:draw(mon,'stats',m);eq(realScale,1)
+print('PASS readable scale-1 layout, crop-colored tiles, and persistent text-size touch controls')

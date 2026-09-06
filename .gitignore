@@ -4,7 +4,9 @@
 /farm/data/
 /farm/install-backups/
 /startup
-/startup.lua
+/farm/version.json
+/farm/update-pending.json
+/farm/update-stage-*/
 /LOCAL-SETUP.md
 .env
 .env.*

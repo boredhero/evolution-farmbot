@@ -9,3 +9,4 @@ lua tests/controller.lua
 lua tests/storage.lua
 lua tests/calibration.lua
 lua tests/dashboard.lua
+lua tests/updater.lua
