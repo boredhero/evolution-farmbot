@@ -1,4 +1,4 @@
 {
-  "version": "0.3.2",
-  "notes": "Workers now find the controller by themselves. Worker setup no longer asks for the farm network name or the controller ID; it discovers running controllers and pairs with one. A mistyped name used to make worker and controller silently invisible to each other, because the name forms the rednet protocol. If a worker still cannot reach its controller it now names the mismatch and the command that fixes it. The hardware command shows the farm network name."
+  "version": "0.4.0",
+  "notes": "Workers now find the controller by themselves: worker setup no longer asks for the farm network name or controller ID, it discovers running controllers and pairs with one. A mistyped name used to leave worker and controller silently invisible to each other, because the name forms the rednet protocol. A worker that still cannot connect now names the mismatch and the command that fixes it. New help command explains every console command, and hardware shows the farm network name. The README is rewritten for operators, with the design detail moved to docs/ARCHITECTURE.md."
 }
