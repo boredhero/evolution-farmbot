@@ -1,0 +1,71 @@
+-- SPDX-License-Identifier: GPL-3.0-only
+-- Copyright (C) 2026 boredhero
+local U=require('farm.lib.util')
+local S=require('farm.lib.store')
+local Setup={}
+local function input(prompt,default)
+  write(prompt..(default and ' ['..tostring(default)..']' or '')..': ')
+  local value=read();if value=='' then return default end;return value
+end
+local function number(prompt,default)
+  while true do local n=tonumber(input(prompt,default));if n and n%1==0 then return n end;print('Enter a whole number.') end
+end
+local function position(prompt)
+  print(prompt..' (use F3 Targeted Block coordinates, not player feet)')
+  return {x=number('X'),y=number('Y'),z=number('Z')}
+end
+function Setup.run(role)
+  print('Evolution FarmBot setup - computer ID '..os.getComputerID())
+  role=role or input('Role: controller, worker, gps',turtle and 'worker' or 'controller')
+  assert(role=='controller' or role=='worker' or role=='gps','Unknown role')
+  U.openModem()
+  local cfg={role=role,group='noah-farm',version=1}
+  if role=='gps' then
+    cfg.pos=position('Coordinates of THIS GPS COMPUTER block')
+  elseif role=='controller' then
+    cfg.group=input('Farm network name','noah-farm')
+    assert(peripheral.find('geo_scanner') or peripheral.find('geoScanner'),'Attach your Geo Scanner before setup')
+    cfg.center=position('Coordinates of the GEO SCANNER block')
+    cfg.radius=32;cfg.scanInterval=120;cfg.allowed={};cfg.customCrops={}
+    print('Seed inventories visible over the wired network:')
+    for _,name in ipairs(peripheral.getNames()) do if peripheral.hasType(name,'inventory') then print(name) end end
+    cfg.seedSource=input('Shared automatic seed BANK inventory name (blank to add later)','')
+    print('No seed list or initial stock required. Harvested seeds replenish this bank.')
+    local ids=input('Worker computer IDs, separated by spaces (can add later)','')
+    for id in ids:gmatch('%d+') do cfg.allowed[tostring(tonumber(id))]=true end
+    print('Coverage: 32 blocks in each direction from the scanner. Starts paused.')
+  else
+    assert(turtle,'Worker requires a turtle')
+    cfg.group=input('Farm network name','noah-farm')
+    cfg.controller=number('Controller computer ID')
+    local tool=false
+    if turtle.getEquippedLeft and turtle.getEquippedRight then
+      local l,r=turtle.getEquippedLeft(),turtle.getEquippedRight()
+      tool=(l and l.name=='minecraft:diamond_pickaxe') or (r and r.name=='minecraft:diamond_pickaxe')
+    end
+    -- Older CC builds may not expose equipped-item detail. The installer guide covers this.
+    if not tool then print('Ensure this is a Mining Turtle (diamond pickaxe) with an Ender Modem.') end
+    print('Dock: output chest in front, fuel ABOVE, seed-delivery chest BELOW.')
+    print('Put coal/charcoal in the turtle. Leave an empty horizontal neighbor for calibration.')
+    input('Press Enter when ready','')
+    require('farm.worker').refuel()
+    local found,output=turtle.inspect();assert(found,'No output inventory in front')
+    local fuelFound,fuel=turtle.inspectUp();assert(fuelFound,'No fuel chest above turtle')
+    local function chest(name) return name=='minecraft:chest' or name=='minecraft:barrel' or name=='minecraft:trapped_chest' end
+    assert(chest(output.name),'Use a vanilla chest/barrel as the output buffer, with an ME Import Bus attached')
+    assert(chest(fuel.name),'Use a vanilla chest/barrel above the turtle for fuel')
+    cfg.outputBlock=output.name;cfg.fuelBlock=fuel.name
+    local seedFound,seed=turtle.inspectDown()
+    if seedFound and chest(seed.name) then cfg.seedBlock=seed.name end
+    cfg.seedBuffer=input('Wired inventory name of seed delivery chest BELOW (blank for dry run)','')
+    if cfg.seedBuffer~='' then assert(cfg.seedBlock,'Place a vanilla seed-delivery chest/barrel below this turtle') end
+    cfg.dock,cfg.dockHeading=require('farm.worker').calibrate()
+    cfg.fuelReserve=256
+    cfg.dryRun=input('Start in inspection-only mode? yes/no','yes')~='no'
+    print('Dock recorded at '..U.key(cfg.dock))
+  end
+  os.setComputerLabel('FarmBot-'..role..'-'..os.getComputerID())
+  S.save('farm/config',cfg)
+  print('Setup saved. Run farm start to launch. Startup will also launch on reboot.')
+end
+return Setup

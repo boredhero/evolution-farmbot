@@ -1,0 +1,16 @@
+# In-game/private state is never part of the published program.
+/farm/config
+/farm/config.*
+/farm/data/
+/farm/install-backups/
+/startup
+/startup.lua
+/LOCAL-SETUP.md
+.env
+.env.*
+*.pem
+*.key
+
+# Reproducible, large local visual previews.
+/dashboard-*-preview.html
+luac.out
