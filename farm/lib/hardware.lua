@@ -65,6 +65,7 @@ function Hardware.lines(env,context)
     f.environment and (context.dimension or 'dimension not read yet')
       or note(f.environment,'optional; filters players in other dimensions'))
   if #f.other>0 then add('Other peripherals',table.concat(f.other,', ')) end
+  if context.group then add('Farm network name',context.group,'workers pair to this automatically') end
   if context.gps then add('GPS position',context.gps) end
   if context.version then add('Installed version','v'..context.version) end
   if context.workers then add('Paired workers',context.workers) end

@@ -953,6 +953,11 @@ function Controller.run(cfg)
     elseif m.kind=='release' then release(id);return {ok=true} end
     return nil,'Unknown request'
   end
+  -- Answers pairing probes on the fixed discovery protocol, so a worker never
+  -- has to be told this farm's network name by hand.
+  local function discoverLoop()
+    while true do pcall(N.answer,cfg) end
+  end
   local function networkLoop()
     while true do
       local id,m=rednet.receive(protocol)
@@ -1130,7 +1135,7 @@ function Controller.run(cfg)
         for _,line in ipairs(Hardware.lines(peripheral,{
           monitorRole=function(name) return dashboard:view(name).role end,
           dimension=playerTracker.dimension,players=#playerList,
-          gps=U.key(cfg.center),version=installedVersion,
+          gps=U.key(cfg.center),version=installedVersion,group=cfg.group,
           workers=#ids>0 and table.concat(ids,', ') or 'none paired yet'})) do print(line) end
       elseif cmd=='history' then
         for k,h in pairs(state.history) do
@@ -1139,7 +1144,7 @@ function Controller.run(cfg)
       else print('Use status, hardware, crops, start, pause, stop/exit, scan, allow ID, check update, update system.') end
     end
   end
-  parallel.waitForAny(networkLoop,scanLoop,displayLoop,playerLoop,consoleLoop,touchLoop,stopLoop)
+  parallel.waitForAny(networkLoop,discoverLoop,scanLoop,displayLoop,playerLoop,consoleLoop,touchLoop,stopLoop)
 end
 return Controller
 ]=],
@@ -1889,6 +1894,7 @@ function Hardware.lines(env,context)
     f.environment and (context.dimension or 'dimension not read yet')
       or note(f.environment,'optional; filters players in other dimensions'))
   if #f.other>0 then add('Other peripherals',table.concat(f.other,', ')) end
+  if context.group then add('Farm network name',context.group,'workers pair to this automatically') end
   if context.gps then add('GPS position',context.gps) end
   if context.version then add('Installed version','v'..context.version) end
   if context.workers then add('Paired workers',context.workers) end
@@ -1933,6 +1939,42 @@ return M
 local U=require('farm.lib.util')
 local N={}
 function N.protocol(cfg) return 'evolution-farmbot-v1:'..cfg.group end
+-- Pairing must not depend on a human retyping the farm name: the protocol is
+-- built from it, so a typo makes worker and controller silently invisible to
+-- each other. Discovery runs on one fixed protocol and reports the real name.
+N.DISCOVERY='evolution-farmbot-discover'
+function N.answer(cfg)
+  local id,m=rednet.receive(N.DISCOVERY)
+  if type(m)=='table' and m.kind=='who' then
+    rednet.send(id,{kind='controller',group=cfg.group,controller=os.getComputerID(),center=cfg.center},N.DISCOVERY)
+  end
+end
+function N.discover(timeout)
+  U.openModem()
+  rednet.broadcast({kind='who'},N.DISCOVERY)
+  local found,seen={},{}
+  local deadline=U.now()+(timeout or 3)
+  repeat
+    local id,m=rednet.receive(N.DISCOVERY,math.max(0,deadline-U.now()))
+    if id and type(m)=='table' and m.kind=='controller' and type(m.group)=='string' and not seen[id] then
+      seen[id]=true;found[#found+1]={controller=id,group=m.group,center=m.center}
+    end
+  until U.now()>=deadline
+  table.sort(found,function(a,b) return a.controller<b.controller end)
+  return found
+end
+-- Turns the commonest misconfiguration into a message that names the fix.
+function N.mismatch(cfg,found)
+  for _,c in ipairs(found or {}) do
+    if c.group~=cfg.group then
+      return 'Controller #'..c.controller..' is on farm network "'..c.group..
+        '" but this worker is set to "'..tostring(cfg.group)..'". Run farm setup worker to pair automatically.'
+    elseif c.controller~=cfg.controller then
+      return 'Controller #'..c.controller..' answered on this network; this worker is set to #'..
+        tostring(cfg.controller)..'. Run farm setup worker to pair automatically.'
+    end
+  end
+end
 function N.client(cfg)
   U.openModem()
   local seq=0
@@ -1950,7 +1992,9 @@ function N.client(cfg)
         end
       until U.now()>=deadline
     end
-    return nil,'Controller not responding'
+    local ok,found=pcall(N.discover,2)
+    return nil,'Controller not responding. '..((ok and N.mismatch(cfg,found)) or
+      'Check the controller is running farm start and both have Ender Modems.')
   end
 end
 return N
@@ -2274,6 +2318,7 @@ return W
 -- Copyright (C) 2026 boredhero
 local U=require('farm.lib.util')
 local S=require('farm.lib.store')
+local N=require('farm.lib.network')
 local Setup={}
 local function input(prompt,default)
   write(prompt..(default and ' ['..tostring(default)..']' or '')..': ')
@@ -2285,6 +2330,32 @@ end
 local function position(prompt)
   print(prompt..' (use F3 Targeted Block coordinates, not player feet)')
   return {x=number('X'),y=number('Y'),z=number('Z')}
+end
+-- Finds the controller instead of asking the operator to retype its farm name.
+-- A mistyped name is invisible rather than wrong: the name is baked into the
+-- rednet protocol, so the pair simply never hear each other.
+function Setup.pair(cfg)
+  print('Searching for a running FarmBot controller...')
+  local ok,found=pcall(N.discover,3)
+  found=ok and found or {}
+  if #found==1 then
+    cfg.controller,cfg.group=found[1].controller,found[1].group
+    print('Paired with controller #'..cfg.controller..' on farm network "'..cfg.group..'".')
+    return
+  end
+  if #found>1 then
+    print('More than one controller answered:')
+    for _,c in ipairs(found) do print('  #'..c.controller..'  network "'..c.group..'"') end
+    cfg.controller=number('Which controller computer ID')
+    for _,c in ipairs(found) do if c.controller==cfg.controller then cfg.group=c.group end end
+    if cfg.group then print('Using farm network "'..cfg.group..'".');return end
+    print('That controller did not answer; entering the name by hand.')
+  else
+    print('No controller answered. Start it with farm start, check both Ender Modems,')
+    print('then rerun farm setup worker. Entering details by hand for now.')
+  end
+  cfg.group=input('Farm network name (must match the controller exactly)',cfg.group or 'noah-farm')
+  cfg.controller=cfg.controller or number('Controller computer ID')
 end
 function Setup.run(role)
   print('Evolution FarmBot setup - computer ID '..os.getComputerID())
@@ -2306,10 +2377,10 @@ function Setup.run(role)
     local ids=input('Worker computer IDs, separated by spaces (can add later)','')
     for id in ids:gmatch('%d+') do cfg.allowed[tostring(tonumber(id))]=true end
     print('Coverage: 32 blocks in each direction from the scanner. Starts paused.')
+    print('Farm network name is "'..cfg.group..'". Workers discover it automatically.')
   else
     assert(turtle,'Worker requires a turtle')
-    cfg.group=input('Farm network name','noah-farm')
-    cfg.controller=number('Controller computer ID')
+    Setup.pair(cfg)
     local tool=false
     if turtle.getEquippedLeft and turtle.getEquippedRight then
       local l,r=turtle.getEquippedLeft(),turtle.getEquippedRight()
@@ -2897,7 +2968,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.3.1\", \"ref\": \"v0.3.1\"}\
+["farm/version.json"] = "{\"version\": \"0.3.2\", \"ref\": \"v0.3.2\"}\
 ",
 }
 local args={...}

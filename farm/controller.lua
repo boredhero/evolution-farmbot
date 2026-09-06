@@ -209,6 +209,11 @@ function Controller.run(cfg)
     elseif m.kind=='release' then release(id);return {ok=true} end
     return nil,'Unknown request'
   end
+  -- Answers pairing probes on the fixed discovery protocol, so a worker never
+  -- has to be told this farm's network name by hand.
+  local function discoverLoop()
+    while true do pcall(N.answer,cfg) end
+  end
   local function networkLoop()
     while true do
       local id,m=rednet.receive(protocol)
@@ -386,7 +391,7 @@ function Controller.run(cfg)
         for _,line in ipairs(Hardware.lines(peripheral,{
           monitorRole=function(name) return dashboard:view(name).role end,
           dimension=playerTracker.dimension,players=#playerList,
-          gps=U.key(cfg.center),version=installedVersion,
+          gps=U.key(cfg.center),version=installedVersion,group=cfg.group,
           workers=#ids>0 and table.concat(ids,', ') or 'none paired yet'})) do print(line) end
       elseif cmd=='history' then
         for k,h in pairs(state.history) do
@@ -395,6 +400,6 @@ function Controller.run(cfg)
       else print('Use status, hardware, crops, start, pause, stop/exit, scan, allow ID, check update, update system.') end
     end
   end
-  parallel.waitForAny(networkLoop,scanLoop,displayLoop,playerLoop,consoleLoop,touchLoop,stopLoop)
+  parallel.waitForAny(networkLoop,discoverLoop,scanLoop,displayLoop,playerLoop,consoleLoop,touchLoop,stopLoop)
 end
 return Controller

@@ -31,7 +31,7 @@ local function run(command,busy,cancel)
       assert(not reply.error,reply.error)
       if current.kind=='job' then job=reply.data;assert(job.job) end
     end}
-  parallel={waitForAny=function(network,scan,display,player,console,touch,stop)
+  parallel={waitForAny=function(network,discover,scan,display,player,console,touch,stop)
     local loops={coroutine.create(scan),coroutine.create(network),coroutine.create(console),coroutine.create(stop)}
     for t=1,10 do
       tick=t

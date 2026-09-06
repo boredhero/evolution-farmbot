@@ -2,6 +2,7 @@
 -- Copyright (C) 2026 boredhero
 local U=require('farm.lib.util')
 local S=require('farm.lib.store')
+local N=require('farm.lib.network')
 local Setup={}
 local function input(prompt,default)
   write(prompt..(default and ' ['..tostring(default)..']' or '')..': ')
@@ -13,6 +14,32 @@ end
 local function position(prompt)
   print(prompt..' (use F3 Targeted Block coordinates, not player feet)')
   return {x=number('X'),y=number('Y'),z=number('Z')}
+end
+-- Finds the controller instead of asking the operator to retype its farm name.
+-- A mistyped name is invisible rather than wrong: the name is baked into the
+-- rednet protocol, so the pair simply never hear each other.
+function Setup.pair(cfg)
+  print('Searching for a running FarmBot controller...')
+  local ok,found=pcall(N.discover,3)
+  found=ok and found or {}
+  if #found==1 then
+    cfg.controller,cfg.group=found[1].controller,found[1].group
+    print('Paired with controller #'..cfg.controller..' on farm network "'..cfg.group..'".')
+    return
+  end
+  if #found>1 then
+    print('More than one controller answered:')
+    for _,c in ipairs(found) do print('  #'..c.controller..'  network "'..c.group..'"') end
+    cfg.controller=number('Which controller computer ID')
+    for _,c in ipairs(found) do if c.controller==cfg.controller then cfg.group=c.group end end
+    if cfg.group then print('Using farm network "'..cfg.group..'".');return end
+    print('That controller did not answer; entering the name by hand.')
+  else
+    print('No controller answered. Start it with farm start, check both Ender Modems,')
+    print('then rerun farm setup worker. Entering details by hand for now.')
+  end
+  cfg.group=input('Farm network name (must match the controller exactly)',cfg.group or 'noah-farm')
+  cfg.controller=cfg.controller or number('Controller computer ID')
 end
 function Setup.run(role)
   print('Evolution FarmBot setup - computer ID '..os.getComputerID())
@@ -34,10 +61,10 @@ function Setup.run(role)
     local ids=input('Worker computer IDs, separated by spaces (can add later)','')
     for id in ids:gmatch('%d+') do cfg.allowed[tostring(tonumber(id))]=true end
     print('Coverage: 32 blocks in each direction from the scanner. Starts paused.')
+    print('Farm network name is "'..cfg.group..'". Workers discover it automatically.')
   else
     assert(turtle,'Worker requires a turtle')
-    cfg.group=input('Farm network name','noah-farm')
-    cfg.controller=number('Controller computer ID')
+    Setup.pair(cfg)
     local tool=false
     if turtle.getEquippedLeft and turtle.getEquippedRight then
       local l,r=turtle.getEquippedLeft(),turtle.getEquippedRight()
