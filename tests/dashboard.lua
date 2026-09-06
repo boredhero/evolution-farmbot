@@ -105,15 +105,20 @@ local function cellAt(frame,ch)
 end
 m.players={{name='ada',x=2,y=65,z=-2,yaw=180,away=4,viewer=true},{name='bo',x=-8,y=65,z=6,yaw=0,away=14}}
 local withPlayers=d:render(m,{role='map',zoom=1},121,81)
-assert(contains(withPlayers,'YOU ARE HERE'));assert(contains(withPlayers,'facing N'))
+assert(contains(withPlayers,'YOU ARE HERE'));assert(contains(withPlayers,'red arrow'))
 assert(contains(withPlayers,'1 other nearby'))
-local _,_,viewerBg=cellAt(withPlayers,'^');eq(viewerBg,'5')
+local _,_,viewerBg=cellAt(withPlayers,'^');eq(viewerBg,'e')
 local _,_,otherBg=cellAt(withPlayers,'v');eq(otherBg,'2')
 local stats=d:render(m,{role='stats'},164,81)
 assert(contains(stats,'PLAYERS NEARBY'));assert(contains(stats,'*ada'));assert(contains(stats,'bo'))
 m.players={{name='ada',x=2,y=81,z=-2,yaw=180,away=20,viewer=true}}
 local offFloor=d:render(m,{role='map',zoom=1,layer=65},121,81)
-assert(contains(offFloor,'YOU ARE HERE'));assert(contains(offFloor,'16 above this floor'))
+assert(contains(offFloor,'YOU ARE HERE'));assert(contains(offFloor,'16 blocks up'))
+-- The pin must survive being on a different floor; that was the original bug.
+local _,_,offBg=cellAt(offFloor,'^');eq(offBg,'e')
+local below=d:render(m,{role='map',zoom=1,layer=65},121,81)
+m.players={{name='ada',x=2,y=64,z=-2,yaw=180,away=3,viewer=true}}
+assert(contains(d:render(m,{role='map',zoom=1,layer=65},121,81),'1 block down'))
 m.players={}
 assert(contains(d:render(m,{role='map',zoom=1},121,81),'No players in range'))
 m.players=nil;m.playerError='player detector unavailable'

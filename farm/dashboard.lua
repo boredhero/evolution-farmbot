@@ -184,21 +184,28 @@ function D:render(m,v,w,h)
     local viewer,nearby=nil,0
     for _,player in ipairs(m.players or {}) do
       nearby=nearby+1
-      if player.viewer then viewer=player end
-      if player.y==layer or player.y==layer+1 then
+      if player.viewer then viewer=player
+      elseif player.y==layer or player.y==layer+1 then
         local px,py=point(player)
-        if px then f:write(px,py,Players.arrow(player.yaw),'f',player.viewer and '5' or '2') end
+        if px then f:write(px,py,Players.arrow(player.yaw),'f','2') end
       end
     end
+    -- Where you are standing is never hidden by the displayed crop floor: the
+    -- marker is about your X/Z, so an off-floor viewer still gets a pin.
     if viewer then
+      local px,py=point(viewer)
+      local onFloor=viewer.y==layer or viewer.y==layer+1
+      if px then f:write(px,py,Players.arrow(viewer.yaw),onFloor and '0' or 'f','e') end
       local drop=viewer.y-layer
-      local where=drop==0 and '' or (' | '..math.abs(drop)..(drop>0 and ' above' or ' below')..' this floor')
-      f:write(3,hh-7,('YOU ARE HERE %s %s facing %s%s%s'):format(Players.arrow(viewer.yaw),U.key(viewer),
-        heading(viewer.yaw),where,nearby>1 and (' | '..(nearby-1)..' other nearby') or ''):sub(1,w-4),'f','5')
+      local away=math.abs(drop)
+      local where=drop==0 and '' or (' | '..away..' block'..(away==1 and '' or 's')..(drop>0 and ' up' or ' down'))
+      local off=px and '' or ' | off the edge of this view'
+      f:write(3,hh-7,('YOU ARE HERE = red arrow'..where..off..
+        (nearby>1 and (' | '..(nearby-1)..' other nearby') or '')):sub(1,w-4),'f','e')
     elseif m.playerError then f:write(3,hh-7,'PLAYERS: '..m.playerError,'e')
     elseif m.players then f:write(3,hh-7,'No players in range','8') end
     f:write(3,hh-6,'COLOR = CROP TYPE | tap a tile for its name','0')
-    f:write(3,hh-5,'R ripe g growing ? unseen ! gap * busy ^v<> player','0')
+    f:write(3,hh-5,'R ripe g growing ? unseen ! gap * busy  red arrow = you','0')
     local fleet={}
     for i,id in ipairs(ids) do
       local worker=m.workers[id]
