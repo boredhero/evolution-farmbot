@@ -72,46 +72,26 @@ function Setup.run(role)
     end
     -- Older CC builds may not expose equipped-item detail. The installer guide covers this.
     if not tool then print('Ensure this is a Mining Turtle (diamond pickaxe) with an Ender Modem.') end
-    print('Dock: output chest in front, fuel ABOVE, seed-delivery chest BELOW.')
-    print('Put coal/charcoal in the turtle. Leave an empty horizontal neighbor for calibration.')
+    print('Give the coordinates of the chests this turtle should use. Use F3')
+    print('Targeted Block coordinates. They can be anywhere it can walk to.')
+    print('Put coal/charcoal in the turtle. Leave an empty horizontal neighbor.')
     input('Press Enter when ready','')
     require('farm.worker').refuel()
-    local found,output=turtle.inspect();assert(found,'No output inventory in front')
-    local fuelFound,fuel=turtle.inspectUp();assert(fuelFound,'No fuel chest above turtle')
-    local function chest(name) return name=='minecraft:chest' or name=='minecraft:barrel' or name=='minecraft:trapped_chest' end
-    -- Prove the output target takes items rather than trusting its block name.
-    -- A chest with an ME Import Bus, an ME interface, a drawer or a modded
-    -- barrel all pass; a wall or a decorative block does not.
-    if not chest(output.name) then
-      local accepted
-      for slot=1,16 do
-        if turtle.getItemCount(slot)>0 then
-          turtle.select(slot)
-          accepted=turtle.drop(1)
-          -- Comes straight back, unless an import bus already ingested it.
-          if accepted then turtle.suck(1) end
-          break
-        end
-      end
-      if accepted==false then
-        error('The block in front ('..output.name..') would not take a test item. '..
-          'Use a chest, barrel or ME interface as the output target.',0)
-      elseif accepted==nil then
-        print('Turtle is empty, so '..output.name..' could not be tested. Accepting it.')
-      else
-        print('Output target '..output.name..' accepted a test item.')
-      end
+    cfg.stations={output=position('Chest/ME interface to PUT harvested items into')}
+    if input('Is there a separate chest to TAKE fuel from? yes/no','yes')~='no' then
+      cfg.stations.fuel=position('Chest to TAKE coal/charcoal from')
     end
-    assert(chest(fuel.name),'Use a vanilla chest/barrel above the turtle for fuel')
-    cfg.outputBlock=output.name;cfg.fuelBlock=fuel.name
+    print('Output at '..U.key(cfg.stations.output)..
+      (cfg.stations.fuel and ', fuel at '..U.key(cfg.stations.fuel) or ', no fuel chest'))
     local seedFound,seed=turtle.inspectDown()
+    local function chest(name) return name=='minecraft:chest' or name=='minecraft:barrel' or name=='minecraft:trapped_chest' end
     if seedFound and chest(seed.name) then cfg.seedBlock=seed.name end
     cfg.seedBuffer=input('Wired inventory name of seed delivery chest BELOW (blank for dry run)','')
     if cfg.seedBuffer~='' then assert(cfg.seedBlock,'Place a vanilla seed-delivery chest/barrel below this turtle') end
     cfg.dock,cfg.dockHeading=require('farm.worker').calibrate()
     cfg.fuelReserve=256
     cfg.dryRun=input('Start in inspection-only mode? yes/no','yes')~='no'
-    print('Dock recorded at '..U.key(cfg.dock))
+    print('Parking cell recorded at '..U.key(cfg.dock)..'. Chests are visited, not attached.')
   end
   os.setComputerLabel('FarmBot-'..role..'-'..os.getComputerID())
   S.save('farm/config',cfg)

@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "version": "0.3.4",
-  "ref": "v0.3.4",
-  "notes": "Worker setup no longer insists on a vanilla chest as the output target. It now proves the block in front accepts items by offering it one, so an ME interface, a chest with an import bus, a drawer or a modded barrel all work. The fuel chest above the turtle is unchanged.",
+  "version": "0.3.5",
+  "ref": "v0.3.5",
+  "notes": "Worker setup now asks for the coordinates of the chest to put harvested items into and the chest to take fuel from, instead of requiring them to be built directly in front of and above the turtle. The turtle walks to each chest and faces it when it needs to, so the chests can be anywhere it can reach. It learns each block on the first visit and refuses to use it if it is later replaced. Existing installs keep working unchanged.",
   "files": [
     {"path": "LICENSE", "size": 35149, "adler32": "f70779ec"},
     {"path": "NOTICE", "size": 691, "adler32": "ad64ed8d"},
@@ -25,9 +25,9 @@
     {"path": "farm/lib/store.lua", "size": 865, "adler32": "cd181fbd"},
     {"path": "farm/lib/util.lua", "size": 1293, "adler32": "632fa4b1"},
     {"path": "farm/lib/world.lua", "size": 2022, "adler32": "49dfa675"},
-    {"path": "farm/setup.lua", "size": 6485, "adler32": "9f737b2f"},
+    {"path": "farm/setup.lua", "size": 5690, "adler32": "b79e846c"},
     {"path": "farm/updater.lua", "size": 8484, "adler32": "75871ef3"},
-    {"path": "farm/worker.lua", "size": 16338, "adler32": "ddbff4b7"},
+    {"path": "farm/worker.lua", "size": 18203, "adler32": "3af059c7"},
     {"path": "startup.lua", "size": 351, "adler32": "e5a976c1"},
     {"path": "update.lua", "size": 197, "adler32": "b1644169"}
   ]

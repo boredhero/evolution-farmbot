@@ -145,13 +145,41 @@ function Worker.run(cfg)
   local function freeSlots()
     local n=0;for i=1,16 do if turtle.getItemCount(i)==0 then n=n+1 end end;return n
   end
+  -- A turtle can only reach the block it faces, so a chest given by coordinate
+  -- is visited: stand on any free neighbour, then turn to look at it.
+  local function approach(target,what)
+    local goals={}
+    for i=1,4 do goals[#goals+1]=U.add(target,U.dirs[i]) end
+    local ok,err=navigate(goals,true)
+    if not ok then return false,'Cannot reach the '..what..' chest at '..U.key(target)..': '..tostring(err) end
+    local heading=U.heading({x=target.x-pos.x,y=0,z=target.z-pos.z})
+    if not heading then return false,'Stopped beside the '..what..' chest but cannot face it' end
+    face(heading)
+    local found,block=turtle.inspect()
+    if not found then return false,'No block at the '..what..' chest coordinates '..U.key(target) end
+    -- Learn the block on first visit, then refuse if it is ever swapped out.
+    local seen=saved.stations and saved.stations[what]
+    if seen and seen~=block.name then
+      return false,'The '..what..' chest at '..U.key(target)..' changed from '..seen..' to '..block.name
+    end
+    if not seen then
+      saved.stations=saved.stations or {};saved.stations[what]=block.name;S.save('farm/data/worker',saved)
+    end
+    return true
+  end
+  local stations=cfg.stations or {}
   local function dock()
     status='Returning to dock'
-    local ok,err=navigate({cfg.dock},true)
-    if not ok then return false,err end
-    face(cfg.dockHeading)
-    local found,b=turtle.inspect()
-    if not found or b.name~=cfg.outputBlock then return false,'Output chest missing or replaced; refusing to drop items' end
+    if stations.output then
+      local ok,err=approach(stations.output,'output')
+      if not ok then return false,err end
+    else
+      local ok,err=navigate({cfg.dock},true)
+      if not ok then return false,err end
+      face(cfg.dockHeading)
+      local found,b=turtle.inspect()
+      if not found or b.name~=cfg.outputBlock then return false,'Output chest missing or replaced; refusing to drop items' end
+    end
     status='Unloading'
     Worker.refuel()
     local plan,planError=rpc('seed_plan')
@@ -188,18 +216,29 @@ function Worker.run(cfg)
         elseif not turtle.drop() or turtle.getItemCount(slot)>0 then return false,'Output chest full or inaccessible' end
       end
     end
-    -- The dedicated chest ABOVE the docking cell supplies coal/charcoal only.
-    local fuelFound,fuelBlock=turtle.inspectUp()
-    if fuelFound and fuelBlock.name==cfg.fuelBlock then
-      local empty
-      for slot=1,16 do if turtle.getItemCount(slot)==0 then empty=slot;break end end
+    local empty
+    for slot=1,16 do if turtle.getItemCount(slot)==0 then empty=slot;break end end
+    if stations.fuel then
       if empty then
+        local ok,err=approach(stations.fuel,'fuel')
+        if not ok then return false,err end
+        turtle.select(empty);turtle.suck(64);Worker.refuel()
+        if turtle.getItemCount(empty)>0 then turtle.select(empty);turtle.drop() end
+      end
+    else
+      -- The dedicated chest ABOVE the docking cell supplies coal/charcoal only.
+      local fuelFound,fuelBlock=turtle.inspectUp()
+      if fuelFound and fuelBlock.name==cfg.fuelBlock and empty then
         turtle.select(empty);turtle.suckUp(64);Worker.refuel()
         if turtle.getItemCount(empty)>0 then turtle.select(empty);turtle.dropUp() end
       end
     end
     local level=turtle.getFuelLevel()
-    if level~='unlimited' and level<cfg.fuelReserve then return false,'Add coal/charcoal to the fuel chest above this turtle' end
+    if level~='unlimited' and level<cfg.fuelReserve then
+      return false,'Add coal/charcoal to the fuel chest at '..(stations.fuel and U.key(stations.fuel) or 'above this turtle')
+    end
+    -- Park at the home cell so the controller can confirm a clean stop.
+    if stations.output then navigate({cfg.dock},true) end
     status='Docked';return true
   end
   local function finishReplant(job)

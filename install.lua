@@ -2526,46 +2526,26 @@ function Setup.run(role)
     end
     -- Older CC builds may not expose equipped-item detail. The installer guide covers this.
     if not tool then print('Ensure this is a Mining Turtle (diamond pickaxe) with an Ender Modem.') end
-    print('Dock: output chest in front, fuel ABOVE, seed-delivery chest BELOW.')
-    print('Put coal/charcoal in the turtle. Leave an empty horizontal neighbor for calibration.')
+    print('Give the coordinates of the chests this turtle should use. Use F3')
+    print('Targeted Block coordinates. They can be anywhere it can walk to.')
+    print('Put coal/charcoal in the turtle. Leave an empty horizontal neighbor.')
     input('Press Enter when ready','')
     require('farm.worker').refuel()
-    local found,output=turtle.inspect();assert(found,'No output inventory in front')
-    local fuelFound,fuel=turtle.inspectUp();assert(fuelFound,'No fuel chest above turtle')
-    local function chest(name) return name=='minecraft:chest' or name=='minecraft:barrel' or name=='minecraft:trapped_chest' end
-    -- Prove the output target takes items rather than trusting its block name.
-    -- A chest with an ME Import Bus, an ME interface, a drawer or a modded
-    -- barrel all pass; a wall or a decorative block does not.
-    if not chest(output.name) then
-      local accepted
-      for slot=1,16 do
-        if turtle.getItemCount(slot)>0 then
-          turtle.select(slot)
-          accepted=turtle.drop(1)
-          -- Comes straight back, unless an import bus already ingested it.
-          if accepted then turtle.suck(1) end
-          break
-        end
-      end
-      if accepted==false then
-        error('The block in front ('..output.name..') would not take a test item. '..
-          'Use a chest, barrel or ME interface as the output target.',0)
-      elseif accepted==nil then
-        print('Turtle is empty, so '..output.name..' could not be tested. Accepting it.')
-      else
-        print('Output target '..output.name..' accepted a test item.')
-      end
+    cfg.stations={output=position('Chest/ME interface to PUT harvested items into')}
+    if input('Is there a separate chest to TAKE fuel from? yes/no','yes')~='no' then
+      cfg.stations.fuel=position('Chest to TAKE coal/charcoal from')
     end
-    assert(chest(fuel.name),'Use a vanilla chest/barrel above the turtle for fuel')
-    cfg.outputBlock=output.name;cfg.fuelBlock=fuel.name
+    print('Output at '..U.key(cfg.stations.output)..
+      (cfg.stations.fuel and ', fuel at '..U.key(cfg.stations.fuel) or ', no fuel chest'))
     local seedFound,seed=turtle.inspectDown()
+    local function chest(name) return name=='minecraft:chest' or name=='minecraft:barrel' or name=='minecraft:trapped_chest' end
     if seedFound and chest(seed.name) then cfg.seedBlock=seed.name end
     cfg.seedBuffer=input('Wired inventory name of seed delivery chest BELOW (blank for dry run)','')
     if cfg.seedBuffer~='' then assert(cfg.seedBlock,'Place a vanilla seed-delivery chest/barrel below this turtle') end
     cfg.dock,cfg.dockHeading=require('farm.worker').calibrate()
     cfg.fuelReserve=256
     cfg.dryRun=input('Start in inspection-only mode? yes/no','yes')~='no'
-    print('Dock recorded at '..U.key(cfg.dock))
+    print('Parking cell recorded at '..U.key(cfg.dock)..'. Chests are visited, not attached.')
   end
   os.setComputerLabel('FarmBot-'..role..'-'..os.getComputerID())
   S.save('farm/config',cfg)
@@ -2894,13 +2874,41 @@ function Worker.run(cfg)
   local function freeSlots()
     local n=0;for i=1,16 do if turtle.getItemCount(i)==0 then n=n+1 end end;return n
   end
+  -- A turtle can only reach the block it faces, so a chest given by coordinate
+  -- is visited: stand on any free neighbour, then turn to look at it.
+  local function approach(target,what)
+    local goals={}
+    for i=1,4 do goals[#goals+1]=U.add(target,U.dirs[i]) end
+    local ok,err=navigate(goals,true)
+    if not ok then return false,'Cannot reach the '..what..' chest at '..U.key(target)..': '..tostring(err) end
+    local heading=U.heading({x=target.x-pos.x,y=0,z=target.z-pos.z})
+    if not heading then return false,'Stopped beside the '..what..' chest but cannot face it' end
+    face(heading)
+    local found,block=turtle.inspect()
+    if not found then return false,'No block at the '..what..' chest coordinates '..U.key(target) end
+    -- Learn the block on first visit, then refuse if it is ever swapped out.
+    local seen=saved.stations and saved.stations[what]
+    if seen and seen~=block.name then
+      return false,'The '..what..' chest at '..U.key(target)..' changed from '..seen..' to '..block.name
+    end
+    if not seen then
+      saved.stations=saved.stations or {};saved.stations[what]=block.name;S.save('farm/data/worker',saved)
+    end
+    return true
+  end
+  local stations=cfg.stations or {}
   local function dock()
     status='Returning to dock'
-    local ok,err=navigate({cfg.dock},true)
-    if not ok then return false,err end
-    face(cfg.dockHeading)
-    local found,b=turtle.inspect()
-    if not found or b.name~=cfg.outputBlock then return false,'Output chest missing or replaced; refusing to drop items' end
+    if stations.output then
+      local ok,err=approach(stations.output,'output')
+      if not ok then return false,err end
+    else
+      local ok,err=navigate({cfg.dock},true)
+      if not ok then return false,err end
+      face(cfg.dockHeading)
+      local found,b=turtle.inspect()
+      if not found or b.name~=cfg.outputBlock then return false,'Output chest missing or replaced; refusing to drop items' end
+    end
     status='Unloading'
     Worker.refuel()
     local plan,planError=rpc('seed_plan')
@@ -2937,18 +2945,29 @@ function Worker.run(cfg)
         elseif not turtle.drop() or turtle.getItemCount(slot)>0 then return false,'Output chest full or inaccessible' end
       end
     end
-    -- The dedicated chest ABOVE the docking cell supplies coal/charcoal only.
-    local fuelFound,fuelBlock=turtle.inspectUp()
-    if fuelFound and fuelBlock.name==cfg.fuelBlock then
-      local empty
-      for slot=1,16 do if turtle.getItemCount(slot)==0 then empty=slot;break end end
+    local empty
+    for slot=1,16 do if turtle.getItemCount(slot)==0 then empty=slot;break end end
+    if stations.fuel then
       if empty then
+        local ok,err=approach(stations.fuel,'fuel')
+        if not ok then return false,err end
+        turtle.select(empty);turtle.suck(64);Worker.refuel()
+        if turtle.getItemCount(empty)>0 then turtle.select(empty);turtle.drop() end
+      end
+    else
+      -- The dedicated chest ABOVE the docking cell supplies coal/charcoal only.
+      local fuelFound,fuelBlock=turtle.inspectUp()
+      if fuelFound and fuelBlock.name==cfg.fuelBlock and empty then
         turtle.select(empty);turtle.suckUp(64);Worker.refuel()
         if turtle.getItemCount(empty)>0 then turtle.select(empty);turtle.dropUp() end
       end
     end
     local level=turtle.getFuelLevel()
-    if level~='unlimited' and level<cfg.fuelReserve then return false,'Add coal/charcoal to the fuel chest above this turtle' end
+    if level~='unlimited' and level<cfg.fuelReserve then
+      return false,'Add coal/charcoal to the fuel chest at '..(stations.fuel and U.key(stations.fuel) or 'above this turtle')
+    end
+    -- Park at the home cell so the controller can confirm a clean stop.
+    if stations.output then navigate({cfg.dock},true) end
     status='Docked';return true
   end
   local function finishReplant(job)
@@ -3128,7 +3147,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.3.4\", \"ref\": \"v0.3.4\"}\
+["farm/version.json"] = "{\"version\": \"0.3.5\", \"ref\": \"v0.3.5\"}\
 ",
 }
 local args={...}

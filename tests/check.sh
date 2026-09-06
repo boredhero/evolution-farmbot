@@ -10,6 +10,7 @@ lua tests/controller_stop.lua
 lua tests/command_history.lua
 lua tests/players.lua
 lua tests/network.lua
+lua tests/stations.lua
 lua tests/hardware.lua
 lua tests/help.lua
 lua tests/storage.lua
