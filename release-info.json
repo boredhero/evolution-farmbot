@@ -1,4 +1,4 @@
 {
-  "version": "0.3.1",
-  "notes": "New hardware command lists every peripheral the controller can see, names anything required that is missing, and shows monitor roles, the detected dimension and players in range. The update check now explains that a release published in the last few minutes may still be cached by GitHub."
+  "version": "0.4.0",
+  "notes": "New help command at the controller prompt. help lists every console command grouped by purpose; help NAME explains one command, its arguments and its aliases. Unknown and blank input now points at help instead of reprinting a wall of text. The test suite reads the console dispatcher and fails if any command it accepts is undocumented, so the help cannot drift. Documentation reorganised: the README is now an operator guide, the design and crop reference moved to docs/ARCHITECTURE.md, and CLAUDE.md records the module map, conventions and release process."
 }

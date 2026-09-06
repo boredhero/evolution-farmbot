@@ -13,6 +13,7 @@ local Dashboard=require('farm.dashboard')
 local CommandHistory=require('farm.lib.command_history')
 local Players=require('farm.lib.players')
 local Hardware=require('farm.lib.hardware')
+local Help=require('farm.lib.help')
 local Controller={}
 function Controller.run(cfg)
   U.openModem()
@@ -336,12 +337,14 @@ function Controller.run(cfg)
   local function consoleLoop()
     local commandHistory=CommandHistory.new()
     print('FarmBot controller #'..os.getComputerID())
-    print('Commands: status, hardware, crops, history, inventories, screens, screen NAME map|stats, start, pause, stop/exit, scan, allow ID, check update, update system, exclude/include X Y Z')
+    print('Type help for the command list, or help NAME for one command.')
     while true do
       write('farm> ');local line=commandHistory:read();local words={}
       for word in line:gmatch('%S+') do words[#words+1]=word end
       local cmd=words[1]
-      if cmd=='start' then stopping=false;state.active=true;save();print('Workers enabled.')
+      if not cmd then -- blank line: reprompt without a scolding
+      elseif cmd=='help' then for _,l in ipairs(Help.lines(words[2])) do print(l) end
+      elseif cmd=='start' then stopping=false;state.active=true;save();print('Workers enabled.')
       elseif cmd=='stop' or cmd=='exit' or cmd=='quit' then
         state.active=false;stopping=true;save()
         print('Stopping: finish current jobs and dock, then return to CraftOS.')
@@ -392,7 +395,7 @@ function Controller.run(cfg)
         for k,h in pairs(state.history) do
           print(k..' '..tostring(h.name)..' '..tostring(h.outcome)..' '..tostring(h.detail or ''))
         end
-      else print('Use status, hardware, crops, start, pause, stop/exit, scan, allow ID, check update, update system.') end
+      else print('No command called '..cmd..'. Type help for the list.') end
     end
   end
   parallel.waitForAny(networkLoop,scanLoop,displayLoop,playerLoop,consoleLoop,touchLoop,stopLoop)
