@@ -244,7 +244,7 @@ To enable these optional crops, install that directory as `world/datapacks/evolu
 
 ## Commands and recovery
 
-Controller prompt: `status`, `crops`, `history`, `inventories`, `screens`, `screen NAME map|stats`, `start`, `pause`, `scan`, `allow ID`, `exclude X Y Z`, `include X Y Z`.
+Controller prompt: `status`, `hardware`, `crops`, `history`, `inventories`, `screens`, `screen NAME map|stats`, `start`, `pause`, `scan`, `allow ID`, `exclude X Y Z`, `include X Y Z`.
 
 CraftOS prompt: `farm start`, `farm setup [controller|worker|gps]`, `farm config`, `farm mode live`, `farm mode dry`, `farm inspect [up|down]`.
 

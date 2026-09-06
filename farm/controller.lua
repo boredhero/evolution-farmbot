@@ -12,6 +12,7 @@ local Metrics=require('farm.lib.metrics')
 local Dashboard=require('farm.dashboard')
 local CommandHistory=require('farm.lib.command_history')
 local Players=require('farm.lib.players')
+local Hardware=require('farm.lib.hardware')
 local Controller={}
 function Controller.run(cfg)
   U.openModem()
@@ -335,7 +336,7 @@ function Controller.run(cfg)
   local function consoleLoop()
     local commandHistory=CommandHistory.new()
     print('FarmBot controller #'..os.getComputerID())
-    print('Commands: status, crops, history, inventories, screens, screen NAME map|stats, start, pause, stop/exit, scan, allow ID, check update, update system, exclude/include X Y Z')
+    print('Commands: status, hardware, crops, history, inventories, screens, screen NAME map|stats, start, pause, stop/exit, scan, allow ID, check update, update system, exclude/include X Y Z')
     while true do
       write('farm> ');local line=commandHistory:read();local words={}
       for word in line:gmatch('%S+') do words[#words+1]=word end
@@ -380,11 +381,18 @@ function Controller.run(cfg)
         if scale and scale>=0.5 and scale<=2 and scale*2%1==0 then
           dashboard:view(words[2]).scale=scale;dashboard.frames[words[2]]=nil;save();print('Text scale saved.')
         else print('Use screen NAME scale 0.5|1|1.5|2') end
+      elseif cmd=='hardware' then
+        local ids={};for id in pairs(workers) do ids[#ids+1]=tostring(id) end;table.sort(ids)
+        for _,line in ipairs(Hardware.lines(peripheral,{
+          monitorRole=function(name) return dashboard:view(name).role end,
+          dimension=playerTracker.dimension,players=#playerList,
+          gps=U.key(cfg.center),version=installedVersion,
+          workers=#ids>0 and table.concat(ids,', ') or 'none paired yet'})) do print(line) end
       elseif cmd=='history' then
         for k,h in pairs(state.history) do
           print(k..' '..tostring(h.name)..' '..tostring(h.outcome)..' '..tostring(h.detail or ''))
         end
-      else print('Use status, crops, start, pause, stop/exit, scan, allow ID, check update, update system.') end
+      else print('Use status, hardware, crops, start, pause, stop/exit, scan, allow ID, check update, update system.') end
     end
   end
   parallel.waitForAny(networkLoop,scanLoop,displayLoop,playerLoop,consoleLoop,touchLoop,stopLoop)

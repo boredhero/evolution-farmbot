@@ -1,4 +1,4 @@
 {
-  "version": "0.3.0",
-  "notes": "Optional Player Detector overlay: nearby players appear on the tactical map as facing arrows, the player nearest the controller is highlighted as YOU ARE HERE, and the operations screen lists who is nearby. An Environment Detector keeps players from other dimensions off the map. Both peripherals are optional; without them the overlay stays empty."
+  "version": "0.3.1",
+  "notes": "New hardware command lists every peripheral the controller can see, names anything required that is missing, and shows monitor roles, the detected dimension and players in range. The update check now explains that a release published in the last few minutes may still be cached by GitHub."
 }

@@ -146,7 +146,13 @@ function Up.run(options)
     local m=decode(fetch(BASE..'main/release.json',262144));Up.validate(m)
     local current=decode(readFile(VERSION));local version=current and current.version or 'unversioned'
     print('Installed: '..version..' | Available: '..m.version)
-    if not Up.newer(m.version,version) then print('Already up to date; no files changed.');return false end
+    if not Up.newer(m.version,version) then
+      print('Already up to date; no files changed.')
+      -- raw.githubusercontent serves the manifest through a CDN with a five
+      -- minute TTL, and it honours neither a query string nor no-cache.
+      print('A release published in the last ~5 minutes may not be visible yet; retry shortly.')
+      return false
+    end
     print(m.notes)
     print('Updates THIS computer only. New release modules are included.')
     print('Config/data are preserved. Successful installation reboots this computer.')
