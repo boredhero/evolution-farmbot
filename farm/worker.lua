@@ -400,7 +400,7 @@ function Worker.run(cfg)
       pending={target=station.pos,seed=job.seed,recipe=recipe};saved.crafting=pending;checkpoint()
     end
     status='Crafting '..pending.seed
-    local runner=pending.recipe.inputCount==9 and CompactCraft or Crafting
+    local runner=(pending.recipe.inputCount or 0)>1 and CompactCraft or Crafting
     local made,reason=runner.run(peripheralSide,pending.seed,pending.recipe,pending,checkpoint)
     if made or not pending.loaded then saved.crafting=nil;checkpoint();rpc('craft_done') end
     return made,reason

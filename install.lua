@@ -1744,6 +1744,9 @@ function D:touch(name,x,y,m)
       elseif action=='compact' then
         m.settings=m.settings or {};m.settings.compacting=m.settings.compacting or {}
         m.settings.compacting[hit.value]=not m.settings.compacting[hit.value]
+        if m.settings.compacting[hit.value] and (hit.value=='wool' or hit.value=='string') then
+          m.settings.compacting[hit.value=='wool' and 'string' or 'wool']=false
+        end
       elseif action=='view' then v.settings=hit.value=='settings';v.role=hit.value=='map' and 'map' or 'stats';v.lifetime=hit.value=='lifetime'
       elseif action=='bot' then v.bot=math.max(1,(v.bot or 1)+hit.value)
       elseif action=='page' then v.page=math.max(1,(v.page or 1)+hit.value)
@@ -1896,12 +1899,15 @@ return H
 ["farm/lib/compact_crafting.lua"] = [=[
 -- SPDX-License-Identifier: GPL-3.0-only
 -- Copyright (C) 2026 boredhero
--- Nine identical inputs, all Crafter slots enabled; one verified output per pulse.
+-- Identical inputs with optional shaped slots; one verified output per pulse.
 local M={}
 local function count(name)
   local n=0;for i=1,16 do local d=turtle.getItemDetail(i);if d and d.name==name then n=n+d.count end end;return n
 end
 function M.run(side,output,recipe,journal,save)
+  local required=recipe.inputCount or 9
+  local slots=recipe.slots or {1,2,3,4,5,6,7,8,9};local wanted={}
+  for _,slot in ipairs(slots) do wanted[slot]=true end
   local inv=peripheral.wrap(side)
   if not inv or type(inv.list)~='function' then return false,'Crafter inventory is not accessible' end
   local drop=side=='top' and turtle.dropUp or side=='bottom' and turtle.dropDown or turtle.drop
@@ -1914,7 +1920,7 @@ function M.run(side,output,recipe,journal,save)
   if not journal.loaded then
     if next(inv.list()) then return false,'Crafter must be empty' end
     if redstone.getOutput(side) then return false,'Crafter control side already powered' end
-    if count(recipe.item)<9 then return false,'Not enough compacting ingredients' end
+    if count(recipe.item)<required then return false,'Not enough compacting ingredients' end
     local room=false
     for i=1,16 do local d=turtle.getItemDetail(i);if not d or (d.name==output and turtle.getItemSpace(i)>0) then room=true end end
     if not room then return false,'No room for compacted output' end
@@ -1922,7 +1928,7 @@ function M.run(side,output,recipe,journal,save)
   end
   local n,items=contents()
   if n==0 and count(output)==journal.before+1 then return true end
-  if not n or n>9 or count(recipe.item)+n~=journal.ingredientBefore or count(output)~=journal.before then
+  if not n or n>required or count(recipe.item)+n~=journal.ingredientBefore or count(output)~=journal.before then
     return false,'Compacting inventory changed; preserving recovery journal'
   end
   local function rollback(reason)
@@ -1939,7 +1945,7 @@ function M.run(side,output,recipe,journal,save)
     end
     return false,reason
   end
-  while n<9 do
+  while n<required do
     local source
     for i=1,16 do local d=turtle.getItemDetail(i);if d and d.name==recipe.item then source=i;break end end
     if not source then return rollback('Missing compacting input') end
@@ -1949,7 +1955,21 @@ function M.run(side,output,recipe,journal,save)
     if nextCount~=n+1 then return false,'Crafter input changed; preserving recovery journal' end
     n=nextCount
   end
-  for slot=1,9 do if not items[slot] or items[slot].count~=1 then return rollback('Compacting needs all nine Crafter slots enabled') end end
+  for _,d in pairs(items) do if d.count~=1 then return rollback('Compacting needs all nine Crafter slots enabled') end end
+  -- Deposits fill slots in order; relocate surplus cells into the shaped recipe.
+  for _,target in ipairs(slots) do if not items[target] then
+    local source;for slot in pairs(items) do if not wanted[slot] then source=slot;break end end
+    if not source or type(inv.pushItems)~='function' then return rollback('Cannot arrange shaped crafting grid') end
+    local ok,moved=pcall(inv.pushItems,side,source,1,target)
+    if not ok or moved~=1 then return rollback('Crafter could not arrange shaped crafting grid') end
+    local amount;amount,items=contents()
+    if amount~=required then return false,'Crafter input changed; preserving recovery journal' end
+  end end
+  for slot=1,9 do
+    if wanted[slot] and (not items[slot] or items[slot].count~=1) or not wanted[slot] and items[slot] then
+      return rollback('Compacting grid does not match recipe')
+    end
+  end
   local ok,err=pcall(function()
     redstone.setOutput(side,false);sleep(0.1);redstone.setOutput(side,true);sleep(0.2)
     redstone.setOutput(side,false);sleep(0.6)
@@ -1975,6 +1995,7 @@ M.recipes={
  {key='rice',label='Rice -> rice bags',item='farmersdelight:rice',output='farmersdelight:rice_bag'},
  {key='panicle',label='Rice panicles -> rice bales',item='farmersdelight:rice_panicle',output='farmersdelight:rice_bale'},
  {key='straw',label='Straw -> straw bales',item='farmersdelight:straw',output='farmersdelight:straw_bale'},
+ {key='wool',label='String -> white wool',item='minecraft:string',output='minecraft:white_wool',inputCount=4,slots={1,2,4,5}},
  {key='string',label='String -> string crates',item='minecraft:string',output='compressedblocks:crated_string'},
 }
 function M.plan(settings,inventory,keep,needed)
@@ -1987,9 +2008,9 @@ function M.plan(settings,inventory,keep,needed)
       reserve[r.item]=math.max(reserve[r.item] or 0,math.ceil(deficit/r.count))
     end
   end
-  for _,r in ipairs(M.recipes) do if settings and settings[r.key]==true then
-    local batches=math.floor(((inventory[r.item] or 0)-(reserve[r.item] or 0))/9)
-    if batches>0 then out[#out+1]={key=r.key,item=r.item,output=r.output,count=1,inputCount=9,batches=batches} end
+  for _,r in ipairs(M.recipes) do if settings and settings[r.key]==true and not (r.key=='string' and settings.wool) then
+    local batches=math.floor(((inventory[r.item] or 0)-(reserve[r.item] or 0))/(r.inputCount or 9))
+    if batches>0 then out[#out+1]={key=r.key,item=r.item,output=r.output,count=1,inputCount=r.inputCount or 9,slots=r.slots,batches=batches} end
   end end
   return out
 end
@@ -4435,7 +4456,7 @@ function Worker.run(cfg)
       pending={target=station.pos,seed=job.seed,recipe=recipe};saved.crafting=pending;checkpoint()
     end
     status='Crafting '..pending.seed
-    local runner=pending.recipe.inputCount==9 and CompactCraft or Crafting
+    local runner=(pending.recipe.inputCount or 0)>1 and CompactCraft or Crafting
     local made,reason=runner.run(peripheralSide,pending.seed,pending.recipe,pending,checkpoint)
     if made or not pending.loaded then saved.crafting=nil;checkpoint();rpc('craft_done') end
     return made,reason
@@ -4749,7 +4770,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.6.5\", \"ref\": \"v0.6.5\"}\
+["farm/version.json"] = "{\"version\": \"0.6.6\", \"ref\": \"v0.6.6\"}\
 ",
 }
 local args={...}

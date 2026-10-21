@@ -11,6 +11,7 @@ M.recipes={
  {key='rice',label='Rice -> rice bags',item='farmersdelight:rice',output='farmersdelight:rice_bag'},
  {key='panicle',label='Rice panicles -> rice bales',item='farmersdelight:rice_panicle',output='farmersdelight:rice_bale'},
  {key='straw',label='Straw -> straw bales',item='farmersdelight:straw',output='farmersdelight:straw_bale'},
+ {key='wool',label='String -> white wool',item='minecraft:string',output='minecraft:white_wool',inputCount=4,slots={1,2,4,5}},
  {key='string',label='String -> string crates',item='minecraft:string',output='compressedblocks:crated_string'},
 }
 function M.plan(settings,inventory,keep,needed)
@@ -23,9 +24,9 @@ function M.plan(settings,inventory,keep,needed)
       reserve[r.item]=math.max(reserve[r.item] or 0,math.ceil(deficit/r.count))
     end
   end
-  for _,r in ipairs(M.recipes) do if settings and settings[r.key]==true then
-    local batches=math.floor(((inventory[r.item] or 0)-(reserve[r.item] or 0))/9)
-    if batches>0 then out[#out+1]={key=r.key,item=r.item,output=r.output,count=1,inputCount=9,batches=batches} end
+  for _,r in ipairs(M.recipes) do if settings and settings[r.key]==true and not (r.key=='string' and settings.wool) then
+    local batches=math.floor(((inventory[r.item] or 0)-(reserve[r.item] or 0))/(r.inputCount or 9))
+    if batches>0 then out[#out+1]={key=r.key,item=r.item,output=r.output,count=1,inputCount=r.inputCount or 9,slots=r.slots,batches=batches} end
   end end
   return out
 end

@@ -188,3 +188,9 @@ for _,hit in ipairs(hits) do if hit.action=='compact' then
  assert(d:touch('strings',hit.x,hit.y,m));toggled=true
 end end
 assert(toggled and m.settings.compacting.string)
+
+for index,r in ipairs(recipes) do if r.key=='wool' then
+ local v={settings=true,setting=index};local _,h=d:render(m,v,51,19);d.views.wool=v;d.hits.wool=h
+ for _,hit in ipairs(h) do if hit.action=='compact' then assert(d:touch('wool',hit.x,hit.y,m)) end end
+ assert(m.settings.compacting.wool and not m.settings.compacting.string)
+end end

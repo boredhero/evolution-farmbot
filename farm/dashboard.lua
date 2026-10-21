@@ -389,6 +389,9 @@ function D:touch(name,x,y,m)
       elseif action=='compact' then
         m.settings=m.settings or {};m.settings.compacting=m.settings.compacting or {}
         m.settings.compacting[hit.value]=not m.settings.compacting[hit.value]
+        if m.settings.compacting[hit.value] and (hit.value=='wool' or hit.value=='string') then
+          m.settings.compacting[hit.value=='wool' and 'string' or 'wool']=false
+        end
       elseif action=='view' then v.settings=hit.value=='settings';v.role=hit.value=='map' and 'map' or 'stats';v.lifetime=hit.value=='lifetime'
       elseif action=='bot' then v.bot=math.max(1,(v.bot or 1)+hit.value)
       elseif action=='page' then v.page=math.max(1,(v.page or 1)+hit.value)

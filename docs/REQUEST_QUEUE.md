@@ -65,3 +65,5 @@ Follow-up evidence after v0.5.3 deployment: live routes to shared docks can stil
 40. Harvest planted BWG pale pumpkins: recognize fruit as its own fleet crop round; preserve growing/attached stems and carved decorations. Deployed v0.6.4 to controller4 and workers8/9/10/21; full suite passed, public main/tag installer and all runtime hashes verified, all five computers running. Backup: /home/noah/minecraft/farmbot-backups/pale-pumpkin-v064-20261021-010820. Actual fruit harvest not yet observed.
 
 41. Optional string bundling through existing Crafters: nine string to one reversible string crate. Deployed v0.6.5 to controller4 and workers8/9/10/21; full suite, runtime hashes and public tagged installer verified. All five computers running. Main raw URL temporarily CDN-cached. Toggle defaults off; live string crafting not yet observed. Backup: /home/noah/minecraft/farmbot-backups/string-crates-v065-20261021-011039.
+
+42. String to white wool (clarified request): four-input shaped crafting and mutually exclusive string conversions. Deployment pending.

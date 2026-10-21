@@ -1,11 +1,14 @@
 -- SPDX-License-Identifier: GPL-3.0-only
 -- Copyright (C) 2026 boredhero
--- Nine identical inputs, all Crafter slots enabled; one verified output per pulse.
+-- Identical inputs with optional shaped slots; one verified output per pulse.
 local M={}
 local function count(name)
   local n=0;for i=1,16 do local d=turtle.getItemDetail(i);if d and d.name==name then n=n+d.count end end;return n
 end
 function M.run(side,output,recipe,journal,save)
+  local required=recipe.inputCount or 9
+  local slots=recipe.slots or {1,2,3,4,5,6,7,8,9};local wanted={}
+  for _,slot in ipairs(slots) do wanted[slot]=true end
   local inv=peripheral.wrap(side)
   if not inv or type(inv.list)~='function' then return false,'Crafter inventory is not accessible' end
   local drop=side=='top' and turtle.dropUp or side=='bottom' and turtle.dropDown or turtle.drop
@@ -18,7 +21,7 @@ function M.run(side,output,recipe,journal,save)
   if not journal.loaded then
     if next(inv.list()) then return false,'Crafter must be empty' end
     if redstone.getOutput(side) then return false,'Crafter control side already powered' end
-    if count(recipe.item)<9 then return false,'Not enough compacting ingredients' end
+    if count(recipe.item)<required then return false,'Not enough compacting ingredients' end
     local room=false
     for i=1,16 do local d=turtle.getItemDetail(i);if not d or (d.name==output and turtle.getItemSpace(i)>0) then room=true end end
     if not room then return false,'No room for compacted output' end
@@ -26,7 +29,7 @@ function M.run(side,output,recipe,journal,save)
   end
   local n,items=contents()
   if n==0 and count(output)==journal.before+1 then return true end
-  if not n or n>9 or count(recipe.item)+n~=journal.ingredientBefore or count(output)~=journal.before then
+  if not n or n>required or count(recipe.item)+n~=journal.ingredientBefore or count(output)~=journal.before then
     return false,'Compacting inventory changed; preserving recovery journal'
   end
   local function rollback(reason)
@@ -43,7 +46,7 @@ function M.run(side,output,recipe,journal,save)
     end
     return false,reason
   end
-  while n<9 do
+  while n<required do
     local source
     for i=1,16 do local d=turtle.getItemDetail(i);if d and d.name==recipe.item then source=i;break end end
     if not source then return rollback('Missing compacting input') end
@@ -53,7 +56,21 @@ function M.run(side,output,recipe,journal,save)
     if nextCount~=n+1 then return false,'Crafter input changed; preserving recovery journal' end
     n=nextCount
   end
-  for slot=1,9 do if not items[slot] or items[slot].count~=1 then return rollback('Compacting needs all nine Crafter slots enabled') end end
+  for _,d in pairs(items) do if d.count~=1 then return rollback('Compacting needs all nine Crafter slots enabled') end end
+  -- Deposits fill slots in order; relocate surplus cells into the shaped recipe.
+  for _,target in ipairs(slots) do if not items[target] then
+    local source;for slot in pairs(items) do if not wanted[slot] then source=slot;break end end
+    if not source or type(inv.pushItems)~='function' then return rollback('Cannot arrange shaped crafting grid') end
+    local ok,moved=pcall(inv.pushItems,side,source,1,target)
+    if not ok or moved~=1 then return rollback('Crafter could not arrange shaped crafting grid') end
+    local amount;amount,items=contents()
+    if amount~=required then return false,'Crafter input changed; preserving recovery journal' end
+  end end
+  for slot=1,9 do
+    if wanted[slot] and (not items[slot] or items[slot].count~=1) or not wanted[slot] and items[slot] then
+      return rollback('Compacting grid does not match recipe')
+    end
+  end
   local ok,err=pcall(function()
     redstone.setOutput(side,false);sleep(0.1);redstone.setOutput(side,true);sleep(0.2)
     redstone.setOutput(side,false);sleep(0.6)
