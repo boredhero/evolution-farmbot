@@ -79,6 +79,7 @@ function Worker.run(cfg)
   cfg.session=tostring(os.getComputerID())..':'..tostring(os.epoch('utc'))
   local request=N.client(cfg)
   local saved=S.load('farm/data/worker',{pending=nil})
+  saved.stats=saved.stats or {steps=0}
   Worker.refuel()
   local pos,heading=Worker.calibrate()
   local status='Starting';local active=false
@@ -88,7 +89,7 @@ function Worker.run(cfg)
   local function rpc(kind,data)
     data=data or {};data.pos=U.copy(pos);data.fuel=turtle.getFuelLevel();data.status=status
     data.inventory=Worker.inventory()
-    data.dryRun=cfg.dryRun
+    data.dryRun=cfg.dryRun;data.stats=saved.stats
     return request(kind,data)
   end
   local function face(h)
@@ -133,7 +134,7 @@ function Worker.run(cfg)
         rpc('blocked',{block=nextPos})
         return false,'Movement failed at '..U.key(nextPos)..': '..tostring(err or 'unknown obstacle')
       end
-      pos=U.copy(nextPos)
+      pos=U.copy(nextPos);saved.stats.steps=saved.stats.steps+1
       if not cfg.dryRun then Pickup.collect('Down');pickupCells[U.key(pos)]=nil end
       -- Save at route boundaries; GPS supplies actual position after a crash.
       if i%16==0 then checkpoint() end
@@ -472,7 +473,7 @@ function Worker.run(cfg)
   local function heartbeat()
     while true do
       rednet.send(cfg.controller,{v=1,seq=-1,session=cfg.session,kind='heartbeat',
-        data={pos=pos,fuel=turtle.getFuelLevel(),status=status}},N.protocol(cfg))
+        data={pos=pos,fuel=turtle.getFuelLevel(),status=status,stats=saved.stats}},N.protocol(cfg))
       sleep(5)
     end
   end

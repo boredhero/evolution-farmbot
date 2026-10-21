@@ -248,3 +248,5 @@ across the fleet. Each round has one exclusive worker. Unloading, refueling and 
 its unchecked plants. No bot repeats a completed type until the shared cycle finishes.
 Old inspection timers do not hide plants during a sweep. Workers collect loose ground items along
 their paths and sweep around harvested plants before changing types or unloading.
+
+Lifetime statistics: tap **STATS** at the bottom of either monitor. The page preserves lifetime farm harvest/replant totals and shows favorite crops, controller uptime, scans, and individual bot harvests, replants, inspections, errors and blocks traveled. PREV BOT/NEXT BOT includes offline bots; MAP returns to the farm. Per-bot attribution and travel begin with v0.4.1; older totals are not retroactively assigned. Counts are harvest actions, not item yields.

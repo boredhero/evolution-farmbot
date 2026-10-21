@@ -1,15 +1,15 @@
 {
   "schema": 1,
-  "version": "0.4.0",
-  "ref": "v0.4.0",
-  "notes": "Advanced Peripherals 0.8 compatibility; exclusive fleet-wide crop rounds across all heights; expanded modded crops; seed crafting and composting; shared worker stations; greedy inventory and scattered drop collection; improved navigation and persistent crop maps with learned growth estimates.",
+  "version": "0.4.1",
+  "ref": "v0.4.1",
+  "notes": "Clickable lifetime statistics with persistent per-worker harvests, replants, inspections and travel; retains existing farm totals and offline worker history.",
   "files": [
     {"path": "LICENSE", "size": 35149, "adler32": "f70779ec"},
     {"path": "NOTICE", "size": 691, "adler32": "ad64ed8d"},
     {"path": "check.lua", "size": 184, "adler32": "6d4c3c97"},
     {"path": "farm.lua", "size": 3655, "adler32": "2fd6da24"},
-    {"path": "farm/controller.lua", "size": 27576, "adler32": "a2ce52de"},
-    {"path": "farm/dashboard.lua", "size": 18725, "adler32": "70513517"},
+    {"path": "farm/controller.lua", "size": 27618, "adler32": "1a05608d"},
+    {"path": "farm/dashboard.lua", "size": 21061, "adler32": "abd80e28"},
     {"path": "farm/lib/batches.lua", "size": 3841, "adler32": "51ff3c31"},
     {"path": "farm/lib/checksum.lua", "size": 369, "adler32": "68cb76fa"},
     {"path": "farm/lib/command_history.lua", "size": 933, "adler32": "161638a1"},
@@ -21,7 +21,7 @@
     {"path": "farm/lib/growth.lua", "size": 1703, "adler32": "6ad14fd9"},
     {"path": "farm/lib/hardware.lua", "size": 3671, "adler32": "4b08e961"},
     {"path": "farm/lib/help.lua", "size": 6194, "adler32": "beaf3a9a"},
-    {"path": "farm/lib/metrics.lua", "size": 1592, "adler32": "da143458"},
+    {"path": "farm/lib/metrics.lua", "size": 2520, "adler32": "8e3c79e9"},
     {"path": "farm/lib/network.lua", "size": 2750, "adler32": "d6a999be"},
     {"path": "farm/lib/path.lua", "size": 2795, "adler32": "b4f68570"},
     {"path": "farm/lib/pickup.lua", "size": 1336, "adler32": "bac5d181"},
@@ -33,7 +33,7 @@
     {"path": "farm/lib/world.lua", "size": 3049, "adler32": "06d1fbf1"},
     {"path": "farm/setup.lua", "size": 5760, "adler32": "d9249f38"},
     {"path": "farm/updater.lua", "size": 8484, "adler32": "75871ef3"},
-    {"path": "farm/worker.lua", "size": 26164, "adler32": "23439b74"},
+    {"path": "farm/worker.lua", "size": 26282, "adler32": "f3c2c7e5"},
     {"path": "startup.lua", "size": 351, "adler32": "e5a976c1"},
     {"path": "update.lua", "size": 197, "adler32": "b1644169"}
   ]

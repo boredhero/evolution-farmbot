@@ -274,3 +274,5 @@ produce are retained/exported normally. No composter means normal ME unloading c
 Workers share one crop cycle, but each crop round belongs to only one worker. Adding a worker gives
 it an unfinished, unowned crop type. Returning to unload does not abandon its current crop. Loose
 crop drops are collected on paths and in a nearby sweep automatically; no new setup is needed.
+
+Lifetime statistics: tap **STATS** at the bottom of either monitor. The page preserves lifetime farm harvest/replant totals and shows favorite crops, controller uptime, scans, and individual bot harvests, replants, inspections, errors and blocks traveled. PREV BOT/NEXT BOT includes offline bots; MAP returns to the farm. Per-bot attribution and travel begin with v0.4.1; older totals are not retroactively assigned. Counts are harvest actions, not item yields.

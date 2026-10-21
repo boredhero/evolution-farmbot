@@ -892,6 +892,7 @@ function Controller.run(cfg)
     local d=m.data
     workers[id]=workers[id] or {}
     local w=workers[id];w.seen=U.now()
+    metrics:report(id,d.stats,U.now())
     if d.pos and not d.preview then w.pos=d.pos end
     if d.fuel then w.fuel=d.fuel end
     if d.status then w.status=tostring(d.status):sub(1,120) end
@@ -1014,7 +1015,7 @@ function Controller.run(cfg)
       Growth.record(state.growth,h,j,d,U.now())
       h.seen=U.now();h.name=d.after and d.after.name or j.name;h.outcome=d.outcome;h.detail=d.detail;h.state=d.state
       if d.after~=nil then h.observed=d.after or nil;h.observedAt=U.now() end
-      metrics:record(j,d.outcome,d.after,U.now(),d.detail)
+      metrics:record(j,d.outcome,d.after,U.now(),d.detail,id)
       if d.outcome=='harvested' then
         h.harvests=(h.harvests or 0)+1
         h.interval=math.max(15,math.floor((h.interval or 60)*0.85))
@@ -1415,13 +1416,42 @@ function D:render(m,v,w,h)
     f:write(math.max(22,w-#version-1),4,version,'0')
   end
   -- Controls live on the bottom rows: the top of a tall monitor is out of arm's reach in game.
-  local barH=role=='map' and 2 or 1
+  local barH=2
   local hh=h-barH
   local function bar(y) f:fill(1,y,w,1,' ','0','b');return 3 end
+  if role=='stats' and v.lifetime then
+    f:write(2,1,'FARMBOT / LIFETIME STATS','0','b')
+    local metrics=m.metrics;local bots=metrics.byWorker or {};local ids={};local steps=0
+    for id,b in pairs(bots) do ids[#ids+1]=id;steps=steps+(b.steps or 0) end
+    table.sort(ids,function(a,b)return tonumber(a)<tonumber(b) end)
+    v.bot=math.max(1,math.min(v.bot or 1,math.max(1,#ids)))
+    f:write(3,4,'Harvests '..metrics.harvests..' | replants '..metrics.replants,'5')
+    f:write(3,5,'Running '..duration(metrics.uptime)..' | scans '..metrics.scans)
+    f:write(3,6,'Fleet travel '..steps..' blocks | bots '..#ids,'3')
+    local best,n=nil,0
+    for name,c in pairs(metrics.byCrop) do if c.harvests>n then best,n=name,c.harvests end end
+    f:write(3,7,'Top crop: '..(best and short(best)..' ('..n..')' or 'learning'))
+    local id=ids[v.bot];local b=id and bots[id]
+    if b then
+      local live=m.workers[tonumber(id)] or m.workers[id]
+      f:write(3,9,'BOT #'..id..' / '..v.bot..' of '..#ids..' / '..(live and m.now-live.seen<30 and 'ONLINE' or 'OFFLINE'),'3')
+      f:write(3,10,'Harvests '..b.harvests..' | replants '..b.replants,'5')
+      f:write(3,11,'Inspections '..b.inspections..' | travel '..b.steps..' blocks')
+      f:write(3,12,'Errors '..b.errors..' | deferred '..b.deferred)
+      best,n=nil,0;for name,value in pairs(b.byCrop) do if value>n then best,n=name,value end end
+      f:write(3,13,'Favorite: '..(best and short(best)..' ('..n..')' or 'learning'))
+    else f:write(3,10,'Waiting for a worker report...') end
+    f:write(3,hh-1,'Per-bot tracking began with stats update.','8')
+    local x=bar(h-1);x=button(f,hits,x,h-1,'[PREV BOT]','bot',-1);button(f,hits,x,h-1,'[NEXT BOT]','bot',1)
+    x=bar(h);x=button(f,hits,x,h,'[MAP]','view','map');x=button(f,hits,x,h,'[LIVE]','view','stats')
+    x=button(f,hits,x,h,'[TEXT -]','scale',-0.5);button(f,hits,x,h,'[TEXT +]','scale',0.5)
+    return f,hits
+  end
   if w<50 or h<28 then
     f:write(2,6,'Use TEXT - for more room.','4')
     f:write(2,8,'Plots '..count(m.plots)..' | workers '..count(m.workers))
     f:write(2,10,'Lifetime harvests '..m.metrics.harvests)
+    local bx=bar(h-1);button(f,hits,bx,h-1,'[STATS]','view','lifetime')
     local x=bar(h);x=button(f,hits,x,h,'[TEXT -]','scale',-0.5);button(f,hits,x,h,'[TEXT +]','scale',0.5)
     return f,hits
   end
@@ -1436,7 +1466,7 @@ function D:render(m,v,w,h)
     x=button(f,hits,x,hh+1,v.cache==false and '[CACHE OFF]' or '[CACHE ON]','cache')
     x=button(f,hits,x,hh+1,'[TEXT -]','scale',-0.5);button(f,hits,x,hh+1,'[TEXT +]','scale',0.5)
     x=bar(h);x=button(f,hits,x,h,'[N]','pan','n');x=button(f,hits,x,h,'[S]','pan','s')
-    x=button(f,hits,x,h,'[W]','pan','w');button(f,hits,x,h,'[E]','pan','e')
+    x=button(f,hits,x,h,'[W]','pan','w');x=button(f,hits,x,h,'[E]','pan','e');button(f,hits,x,h,'[STATS]','view','lifetime')
     local span=math.max(9,math.ceil((m.radius*2+1)/(v.zoom or 1)))
     local cx,cz=v.cx or m.center.x,v.cz or m.center.z
     local minX,minZ=cx-math.floor(span/2),cz-math.floor(span/2)
@@ -1618,6 +1648,7 @@ function D:render(m,v,w,h)
       f:write(3,hh-footer+3+i,(math.floor(m.now-event.time)..'s  '..event.outcome..'  '..short(event.name)..(event.detail and ' | '..event.detail or '')):sub(1,w-5),event.outcome=='deferred' and 'e' or '0')
     end end
     f:write(3,hh-1,'? = unseen/stale | HV = lifetime harvest actions','0')
+    local nav=bar(h-1);nav=button(f,hits,nav,h-1,'[MAP]','view','map');button(f,hits,nav,h-1,'[STATS]','view','lifetime')
     local bx=bar(h);bx=button(f,hits,bx,h,'[PREV CROPS]','page',-1);bx=button(f,hits,bx,h,'[NEXT CROPS]','page',1)
     bx=button(f,hits,bx,h,'[TEXT -]','scale',-0.5);button(f,hits,bx,h,'[TEXT +]','scale',0.5)
   end
@@ -1639,6 +1670,8 @@ function D:touch(name,x,y,m)
     if x>=hit.x and x<hit.x+hit.w and y>=hit.y and y<hit.y+hit.h then
       local action=hit.action
       if action=='select' then v.selected=hit.value
+      elseif action=='view' then v.role=hit.value=='map' and 'map' or 'stats';v.lifetime=hit.value=='lifetime'
+      elseif action=='bot' then v.bot=math.max(1,(v.bot or 1)+hit.value)
       elseif action=='page' then v.page=math.max(1,(v.page or 1)+hit.value)
       elseif action=='cache' then v.cache=v.cache==false
       elseif action=='scale' then v.scale=math.max(0.5,math.min(2,(v.scale or 1)+hit.value))
@@ -2543,17 +2576,36 @@ return Help
 local M={};M.__index=M
 function M.new(data,now)
   data=data or {since=now,uptime=0,harvests=0,replants=0,deferred=0,errors=0,scans=0,byCrop={},events={}}
+  data.byWorker=data.byWorker or {};data.workerSince=data.workerSince or now
   data.sessions=(data.sessions or 0)+1
   return setmetatable({data=data,last=now,started=now},M)
 end
 function M:tick(now)
   self.data.uptime=self.data.uptime+math.max(0,now-self.last);self.last=now
 end
-function M:record(job,outcome,after,now,detail)
+function M:worker(id,now)
+  local key=tostring(id);local w=self.data.byWorker[key]
+  if not w then w={since=now,harvests=0,replants=0,deferred=0,errors=0,inspections=0,steps=0,byCrop={}};self.data.byWorker[key]=w end
+  return w
+end
+function M:report(id,stats,now)
+  local w=self:worker(id,now)
+  if type(stats)=='table' and type(stats.steps)=='number' and stats.steps>=0 and stats.steps<math.huge then
+    w.steps=math.max(w.steps,math.floor(stats.steps))
+  end
+end
+function M:record(job,outcome,after,now,detail,id)
   local harvested=outcome=='harvested' or outcome=='deferred'
   local replanted=outcome=='replanted' or (outcome=='harvested' and job.seed and after
     and (after.name==job.name or after.name==job.plantedName))
   local errorState=outcome=='error' or outcome=='unreachable'
+  if id and outcome~='dry_run' then
+    local w=self:worker(id,now);w.inspections=w.inspections+1
+    if harvested then w.harvests=w.harvests+1;local name=job.crop or job.name;w.byCrop[name]=(w.byCrop[name] or 0)+1 end
+    if replanted then w.replants=w.replants+1 end
+    if outcome=='deferred' then w.deferred=w.deferred+1 end
+    if errorState then w.errors=w.errors+1 end
+  end
   if not harvested and not replanted and outcome~='deferred' and not errorState then return end
   local crop=self.data.byCrop[job.name] or {harvests=0,replants=0,deferred=0}
   self.data.byCrop[job.name]=crop
@@ -3378,6 +3430,7 @@ function Worker.run(cfg)
   cfg.session=tostring(os.getComputerID())..':'..tostring(os.epoch('utc'))
   local request=N.client(cfg)
   local saved=S.load('farm/data/worker',{pending=nil})
+  saved.stats=saved.stats or {steps=0}
   Worker.refuel()
   local pos,heading=Worker.calibrate()
   local status='Starting';local active=false
@@ -3387,7 +3440,7 @@ function Worker.run(cfg)
   local function rpc(kind,data)
     data=data or {};data.pos=U.copy(pos);data.fuel=turtle.getFuelLevel();data.status=status
     data.inventory=Worker.inventory()
-    data.dryRun=cfg.dryRun
+    data.dryRun=cfg.dryRun;data.stats=saved.stats
     return request(kind,data)
   end
   local function face(h)
@@ -3432,7 +3485,7 @@ function Worker.run(cfg)
         rpc('blocked',{block=nextPos})
         return false,'Movement failed at '..U.key(nextPos)..': '..tostring(err or 'unknown obstacle')
       end
-      pos=U.copy(nextPos)
+      pos=U.copy(nextPos);saved.stats.steps=saved.stats.steps+1
       if not cfg.dryRun then Pickup.collect('Down');pickupCells[U.key(pos)]=nil end
       -- Save at route boundaries; GPS supplies actual position after a crash.
       if i%16==0 then checkpoint() end
@@ -3771,7 +3824,7 @@ function Worker.run(cfg)
   local function heartbeat()
     while true do
       rednet.send(cfg.controller,{v=1,seq=-1,session=cfg.session,kind='heartbeat',
-        data={pos=pos,fuel=turtle.getFuelLevel(),status=status}},N.protocol(cfg))
+        data={pos=pos,fuel=turtle.getFuelLevel(),status=status,stats=saved.stats}},N.protocol(cfg))
       sleep(5)
     end
   end
@@ -3871,7 +3924,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.4.0\", \"ref\": \"v0.4.0\"}\
+["farm/version.json"] = "{\"version\": \"0.4.1\", \"ref\": \"v0.4.1\"}\
 ",
 }
 local args={...}

@@ -26,4 +26,5 @@ lua tests/storage.lua
 lua tests/calibration.lua
 python3 tests/gps_beacons.py
 lua tests/dashboard.lua
+lua tests/lifetime.lua
 lua tests/updater.lua

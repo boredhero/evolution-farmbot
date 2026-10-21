@@ -26,7 +26,9 @@ Append requests in conversation order. Keep superseded requests and verify deplo
 | 20 | One crop round survives unloading/refueling/restarts; all other crop rounds form a fleet cycle | Deployed; full test suite passes |
 | 21 | Exclusive owner per crop round, globally completed types cannot repeat on another bot | Deployed; full test suite passes |
 | 22 | Sugar cane growing into its approach cell must retarget and replan above new top | Deployed; full test suite passes |
-| 23 | Lifetime system and individual worker statistics with clickable stats page | Pending; next feature after public release |
+| 23 | Lifetime system and individual worker statistics with clickable stats page | Deployed to controller 4 and workers 8/9; full suite passes; both workers recorded in durable stats |
+| 24 | Hoe recovery for known farmland crops on tagged dirt; report crop cell and soil separately | In progress |
+| 25 | Periodically clear ordinary hanging vines a few blocks above known crop spots, including empty planting gaps | Queued after hoe recovery |
 
 Deployment 2026-10-20 22:27 verified active controller/worker, shared chest coordinates, one Crafter at 1789,65,3796, six blooming aloe plots and thirteen blueberry bushes.
 

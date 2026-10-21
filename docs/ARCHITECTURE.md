@@ -331,3 +331,5 @@ harvested plants before changing crop types or unloading. Collection goals prese
 levels and use crop roots for tall columns. Routes remain non-destructive and return-fuel-budgeted.
 New sugar cane/cactus growth blocking an old top approach updates the target and raises the approach,
 without changing the job token/root identity. Obstacles immediately update controller occupancy.
+
+Lifetime statistics: tap **STATS** at the bottom of either monitor. The page preserves lifetime farm harvest/replant totals and shows favorite crops, controller uptime, scans, and individual bot harvests, replants, inspections, errors and blocks traveled. PREV BOT/NEXT BOT includes offline bots; MAP returns to the farm. Per-bot attribution and travel begin with v0.4.1; older totals are not retroactively assigned. Counts are harvest actions, not item yields.

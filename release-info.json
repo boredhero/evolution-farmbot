@@ -1,4 +1,4 @@
 {
-  "version": "0.4.0",
-  "notes": "Advanced Peripherals 0.8 compatibility; exclusive fleet-wide crop rounds across all heights; expanded modded crops; seed crafting and composting; shared worker stations; greedy inventory and scattered drop collection; improved navigation and persistent crop maps with learned growth estimates."
+  "version": "0.4.1",
+  "notes": "Clickable lifetime statistics with persistent per-worker harvests, replants, inspections and travel; retains existing farm totals and offline worker history."
 }

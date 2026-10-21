@@ -115,6 +115,7 @@ function Controller.run(cfg)
     local d=m.data
     workers[id]=workers[id] or {}
     local w=workers[id];w.seen=U.now()
+    metrics:report(id,d.stats,U.now())
     if d.pos and not d.preview then w.pos=d.pos end
     if d.fuel then w.fuel=d.fuel end
     if d.status then w.status=tostring(d.status):sub(1,120) end
@@ -237,7 +238,7 @@ function Controller.run(cfg)
       Growth.record(state.growth,h,j,d,U.now())
       h.seen=U.now();h.name=d.after and d.after.name or j.name;h.outcome=d.outcome;h.detail=d.detail;h.state=d.state
       if d.after~=nil then h.observed=d.after or nil;h.observedAt=U.now() end
-      metrics:record(j,d.outcome,d.after,U.now(),d.detail)
+      metrics:record(j,d.outcome,d.after,U.now(),d.detail,id)
       if d.outcome=='harvested' then
         h.harvests=(h.harvests or 0)+1
         h.interval=math.max(15,math.floor((h.interval or 60)*0.85))
