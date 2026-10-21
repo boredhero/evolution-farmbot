@@ -1228,15 +1228,17 @@ function Controller.run(cfg)
   local function displayLoop()
     while true do
       local names=peripheral.getNames();table.sort(names)
-      local model=displayModel();dashboardError=nil
+      local model=displayModel();dashboardError=nil;local activeDisplays={}
       for _,name in ipairs(names) do
         if peripheral.hasType(name,'monitor') then
+          activeDisplays[name]=true
           local started=U.now()
           local ok,err=pcall(function() dashboard:draw(peripheral.wrap(name),name,model) end)
           performance:record('draw',started)
           if not ok then dashboardError=tostring(err) end
         end
       end
+      dashboard:prune(activeDisplays)
       -- Players move far between frames; only pay for a fast redraw while one is watching.
       sleep(#playerList>0 and 0.5 or 2)
     end
@@ -1721,6 +1723,11 @@ function D:render(m,v,w,h)
   if m.scanError then f:write(3,hh,('SCANNER: '..m.scanError):sub(1,w-5),'e') end
   return f,hits
 end
+function D:prune(active)
+  -- Preserve saved display preferences; detached hardware needs no render cache.
+  for name in pairs(self.frames) do if not active[name] then self.frames[name]=nil end end
+  for name in pairs(self.hits) do if not active[name] then self.hits[name]=nil end end
+end
 function D:draw(mon,name,m)
   local v=self:view(name);local scale=v.scale or 1
   if mon.getTextScale()~=scale then mon.setTextScale(scale);self.frames[name]=nil end
@@ -2021,6 +2028,10 @@ return M
 -- Copyright (C) 2026 boredhero
 local C=require('farm.lib.crops')
 local M={}
+local function seedItem(name)
+  local bare=name:match(':(.+)$') or name
+  return bare=='seed' or bare:match('_seeds$') or bare:match('_seed$')
+end
 function M.plan(garden,batches,leases,inventory,keep,stock)
   local busy,seedCrops={},{}
   for _,name in pairs(batches.pending or {}) do busy[name]=true end
@@ -2035,8 +2046,7 @@ function M.plan(garden,batches,leases,inventory,keep,stock)
   local amounts={}
   for seed,r in pairs(seedCrops) do
     -- Edible planting items are produce, not excess seeds.
-    local bare=seed:match(':(.+)$') or seed
-    if not r.busy and (bare=='seed' or bare:match('_seeds$') or bare:match('_seed$')) then
+    if not r.busy and seedItem(seed) then
       local reserve=math.max(keep[seed] or 0,16-(stock[seed] or 0))
       local excess=(inventory[seed] or 0)-reserve
       if excess>0 then amounts[seed]=excess end
@@ -2053,29 +2063,40 @@ function M.run(side,amounts)
     return b
   end
   local total=0
+  local function allowed(slot)
+    local item=slot and turtle.getItemDetail(slot)
+    return item and seedItem(item.name) and (amounts[item.name] or 0)>0 and item.name
+  end
+  local function useSeed(slot)
+    local name=allowed(slot);if not name then return 0 end
+    turtle.select(slot);local before=turtle.getItemCount(slot);use()
+    local consumed=before-turtle.getItemCount(slot)
+    if consumed>0 then amounts[name]=math.max(0,amounts[name]-consumed);total=total+consumed end
+    return consumed
+  end
   local function empty(slot)
     local b,err=block();if not b then return false,err end
     if b.state.level==7 then sleep(1.2);b,err=block();if not b then return false,err end end
     if b.state.level==8 then
       local tool=slot
-      if not tool or turtle.getItemCount(tool)==0 then
-        for i=1,16 do if turtle.getItemCount(i)>0 then tool=i;break end end
+      if not allowed(tool) then
+        tool=nil;for i=1,16 do if allowed(i) then tool=i;break end end
       end
-      if not tool then return false,'Need an interaction item to empty composter' end
-      turtle.select(tool);use();suck()
+      if not tool then return false,'Bone meal ready; waiting for surplus seeds to empty composter' end
+      -- Another worker may empty it between inspect and use. Only spend authorized seeds.
+      useSeed(tool);suck()
       b,err=block();if not b then return false,err end
     end
     return b.state.level<7,'Composter is still processing'
   end
   for slot=1,16 do
     local item=turtle.getItemDetail(slot)
-    if item and (amounts[item.name] or 0)>0 then
+    if item and allowed(slot) then
       while (amounts[item.name] or 0)>0 and turtle.getItemCount(slot)>0 do
         local ok,err=empty(slot);if not ok then return total,err end
-        turtle.select(slot);local before=turtle.getItemCount(slot);use()
-        local consumed=before-turtle.getItemCount(slot)
+        if not allowed(slot) then break end
+        local consumed=useSeed(slot)
         if consumed~=1 then break end -- Unsupported mod seeds stay in inventory for normal export.
-        amounts[item.name]=amounts[item.name]-1;total=total+1
       end
     end
   end
@@ -2968,11 +2989,12 @@ return J
 local U=require('farm.lib.util')
 local M={};M.__index=M
 local serial=0
+local QUEUE_LIMIT=128;local WORKER_LIMIT=8
 local fast={step=true,status=true,control=true}
 function M.new(opts)
   serial=serial+1
   return setmetatable({protocol=opts.protocol,allowed=opts.allowed,handle=opts.handle,performance=opts.performance,
-    event='farmbot_mailbox_'..serial,queue={},head=1,tail=0,pending={},responses={},order={},first=1,last=0},M)
+    event='farmbot_mailbox_'..serial,queue={},head=1,tail=0,queued=0,byWorker={},pending={},responses={},order={},first=1,last=0},M)
 end
 function M:reply(id,m,key)
   local started=U.now();local ok,data,err=pcall(self.handle,id,m)
@@ -3001,9 +3023,12 @@ function M:receive()
         local key=tostring(id)..':'..tostring(m.session)..':'..tostring(m.seq)
         if self.responses[key] then rednet.send(id,self.responses[key],self.protocol)
         elseif not self.pending[key] then
-          self.pending[key]=true
-          if fast[m.kind] then self:reply(id,m,key)
+          if fast[m.kind] then self.pending[key]=true;self:reply(id,m,key)
+          elseif self.queued>=QUEUE_LIMIT or (self.byWorker[id] or 0)>=WORKER_LIMIT then
+            -- Not accepted or cached: retry the same sequence when capacity returns.
+            rednet.send(id,{seq=m.seq,session=m.session,busy=true},self.protocol)
           else
+            self.pending[key]=true;self.queued=self.queued+1;self.byWorker[id]=(self.byWorker[id] or 0)+1
             local empty=self.head>self.tail
             self.tail=self.tail+1;self.queue[self.tail]={id=id,message=m,key=key}
             if empty then os.queueEvent(self.event) end
@@ -3018,6 +3043,12 @@ function M:work()
     while self.head<=self.tail do
       local item=self.queue[self.head];self.queue[self.head]=nil;self.head=self.head+1
       self:reply(item.id,item.message,item.key)
+      self.queued=self.queued-1;local remaining=self.byWorker[item.id]-1
+      self.byWorker[item.id]=remaining>0 and remaining or nil
+      if self.head>QUEUE_LIMIT then
+        local queue={};for i=self.head,self.tail do queue[#queue+1]=self.queue[i] end
+        self.queue=queue;self.head=1;self.tail=#queue
+      end
     end
     self.queue={};self.head=1;self.tail=0
     os.pullEvent(self.event)
@@ -3123,17 +3154,20 @@ function N.client(cfg)
   return function(kind,data)
     seq=seq+1
     local message={v=1,seq=seq,kind=kind,data=data or {},session=cfg.session}
+    local busy=false
     for attempt=1,4 do
       rednet.send(cfg.controller,message,N.protocol(cfg))
       local deadline=U.now()+(kind=='step' and 0.5 or 1)
       repeat
         local id,reply=rednet.receive(N.protocol(cfg),math.max(0,deadline-U.now()))
         if id==cfg.controller and type(reply)=='table' and reply.seq==seq and reply.session==cfg.session then
+          if reply.busy then busy=true;sleep(0.25);break end
           if reply.error then return nil,reply.error end
           return reply.data
         end
       until U.now()>=deadline
     end
+    if busy then return nil,'Controller busy; retry shortly' end
     if kind=='step' then return nil,'Controller did not answer movement permission within 2 seconds' end
     local ok,found=pcall(N.discover,1)
     return nil,'Controller not responding. '..((ok and N.mismatch(cfg,found)) or
@@ -4770,7 +4804,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.6.6\", \"ref\": \"v0.6.6\"}\
+["farm/version.json"] = "{\"version\": \"0.6.7\", \"ref\": \"v0.6.7\"}\
 ",
 }
 local args={...}

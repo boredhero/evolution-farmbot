@@ -451,15 +451,17 @@ function Controller.run(cfg)
   local function displayLoop()
     while true do
       local names=peripheral.getNames();table.sort(names)
-      local model=displayModel();dashboardError=nil
+      local model=displayModel();dashboardError=nil;local activeDisplays={}
       for _,name in ipairs(names) do
         if peripheral.hasType(name,'monitor') then
+          activeDisplays[name]=true
           local started=U.now()
           local ok,err=pcall(function() dashboard:draw(peripheral.wrap(name),name,model) end)
           performance:record('draw',started)
           if not ok then dashboardError=tostring(err) end
         end
       end
+      dashboard:prune(activeDisplays)
       -- Players move far between frames; only pay for a fast redraw while one is watching.
       sleep(#playerList>0 and 0.5 or 2)
     end

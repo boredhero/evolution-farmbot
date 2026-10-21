@@ -1,1 +1,1 @@
-{"version": "0.6.6", "notes": "String to white wool with automatic shaped Crafter grids and exclusive string conversion settings."}
+{"version": "0.6.7", "notes": "Bound request queues with retryable backpressure, release detached monitor caches, and enforce surplus-seed-only composter interactions."}

@@ -45,17 +45,20 @@ function N.client(cfg)
   return function(kind,data)
     seq=seq+1
     local message={v=1,seq=seq,kind=kind,data=data or {},session=cfg.session}
+    local busy=false
     for attempt=1,4 do
       rednet.send(cfg.controller,message,N.protocol(cfg))
       local deadline=U.now()+(kind=='step' and 0.5 or 1)
       repeat
         local id,reply=rednet.receive(N.protocol(cfg),math.max(0,deadline-U.now()))
         if id==cfg.controller and type(reply)=='table' and reply.seq==seq and reply.session==cfg.session then
+          if reply.busy then busy=true;sleep(0.25);break end
           if reply.error then return nil,reply.error end
           return reply.data
         end
       until U.now()>=deadline
     end
+    if busy then return nil,'Controller busy; retry shortly' end
     if kind=='step' then return nil,'Controller did not answer movement permission within 2 seconds' end
     local ok,found=pcall(N.discover,1)
     return nil,'Controller not responding. '..((ok and N.mismatch(cfg,found)) or

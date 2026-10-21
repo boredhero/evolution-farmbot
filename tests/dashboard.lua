@@ -194,3 +194,15 @@ for index,r in ipairs(recipes) do if r.key=='wool' then
  for _,hit in ipairs(h) do if hit.action=='compact' then assert(d:touch('wool',hit.x,hit.y,m)) end end
  assert(m.settings.compacting.wool and not m.settings.compacting.string)
 end end
+local retained=D.new();local mon={getTextScale=function()return 1 end,getSize=function()return 51,19 end,
+ setCursorPos=function()end,blit=function()end}
+for i=1,100 do retained:draw(mon,'retired-'..i,m) end
+retained.views['retired-1'].scale=0.5
+retained:prune({['retired-100']=true})
+for name in pairs(retained.frames) do assert(name=='retired-100') end
+for name in pairs(retained.hits) do assert(name=='retired-100') end
+assert(retained.frames['retired-100'] and retained.hits['retired-100'])
+assert(retained.views['retired-1'].scale==0.5,'saved user preferences survive disconnection')
+retained:prune({});assert(not next(retained.frames) and not next(retained.hits))
+retained:draw(mon,'retired-100',m);assert(retained.frames['retired-100'] and retained.hits['retired-100'])
+print('PASS disconnected monitor frames and click maps are released; configured preferences survive and reconnect redraws')

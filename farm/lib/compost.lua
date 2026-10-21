@@ -2,6 +2,10 @@
 -- Copyright (C) 2026 boredhero
 local C=require('farm.lib.crops')
 local M={}
+local function seedItem(name)
+  local bare=name:match(':(.+)$') or name
+  return bare=='seed' or bare:match('_seeds$') or bare:match('_seed$')
+end
 function M.plan(garden,batches,leases,inventory,keep,stock)
   local busy,seedCrops={},{}
   for _,name in pairs(batches.pending or {}) do busy[name]=true end
@@ -16,8 +20,7 @@ function M.plan(garden,batches,leases,inventory,keep,stock)
   local amounts={}
   for seed,r in pairs(seedCrops) do
     -- Edible planting items are produce, not excess seeds.
-    local bare=seed:match(':(.+)$') or seed
-    if not r.busy and (bare=='seed' or bare:match('_seeds$') or bare:match('_seed$')) then
+    if not r.busy and seedItem(seed) then
       local reserve=math.max(keep[seed] or 0,16-(stock[seed] or 0))
       local excess=(inventory[seed] or 0)-reserve
       if excess>0 then amounts[seed]=excess end
@@ -34,29 +37,40 @@ function M.run(side,amounts)
     return b
   end
   local total=0
+  local function allowed(slot)
+    local item=slot and turtle.getItemDetail(slot)
+    return item and seedItem(item.name) and (amounts[item.name] or 0)>0 and item.name
+  end
+  local function useSeed(slot)
+    local name=allowed(slot);if not name then return 0 end
+    turtle.select(slot);local before=turtle.getItemCount(slot);use()
+    local consumed=before-turtle.getItemCount(slot)
+    if consumed>0 then amounts[name]=math.max(0,amounts[name]-consumed);total=total+consumed end
+    return consumed
+  end
   local function empty(slot)
     local b,err=block();if not b then return false,err end
     if b.state.level==7 then sleep(1.2);b,err=block();if not b then return false,err end end
     if b.state.level==8 then
       local tool=slot
-      if not tool or turtle.getItemCount(tool)==0 then
-        for i=1,16 do if turtle.getItemCount(i)>0 then tool=i;break end end
+      if not allowed(tool) then
+        tool=nil;for i=1,16 do if allowed(i) then tool=i;break end end
       end
-      if not tool then return false,'Need an interaction item to empty composter' end
-      turtle.select(tool);use();suck()
+      if not tool then return false,'Bone meal ready; waiting for surplus seeds to empty composter' end
+      -- Another worker may empty it between inspect and use. Only spend authorized seeds.
+      useSeed(tool);suck()
       b,err=block();if not b then return false,err end
     end
     return b.state.level<7,'Composter is still processing'
   end
   for slot=1,16 do
     local item=turtle.getItemDetail(slot)
-    if item and (amounts[item.name] or 0)>0 then
+    if item and allowed(slot) then
       while (amounts[item.name] or 0)>0 and turtle.getItemCount(slot)>0 do
         local ok,err=empty(slot);if not ok then return total,err end
-        turtle.select(slot);local before=turtle.getItemCount(slot);use()
-        local consumed=before-turtle.getItemCount(slot)
+        if not allowed(slot) then break end
+        local consumed=useSeed(slot)
         if consumed~=1 then break end -- Unsupported mod seeds stay in inventory for normal export.
-        amounts[item.name]=amounts[item.name]-1;total=total+1
       end
     end
   end

@@ -366,6 +366,11 @@ function D:render(m,v,w,h)
   if m.scanError then f:write(3,hh,('SCANNER: '..m.scanError):sub(1,w-5),'e') end
   return f,hits
 end
+function D:prune(active)
+  -- Preserve saved display preferences; detached hardware needs no render cache.
+  for name in pairs(self.frames) do if not active[name] then self.frames[name]=nil end end
+  for name in pairs(self.hits) do if not active[name] then self.hits[name]=nil end end
+end
 function D:draw(mon,name,m)
   local v=self:view(name);local scale=v.scale or 1
   if mon.getTextScale()~=scale then mon.setTextScale(scale);self.frames[name]=nil end

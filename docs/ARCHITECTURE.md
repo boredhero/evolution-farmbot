@@ -359,3 +359,7 @@ Growth tools: controller state.settings.autoWorms and autoBoneMeal default true 
 String compacting uses the installed Compressed Blocks recipe: nine minecraft:string become one compressedblocks:crated_string, reversible to nine string. It is independently opt-in alongside the crop compacting recipes.
 
 White wool is an alternative four-string conversion. The Crafter arranges slots1/2/4/5 through same-inventory slot transfers before pulsing. String crates and wool toggles are mutually exclusive; wool wins if imported settings enable both.
+
+RPC backpressure caps admitted heavy requests at128 fleet-wide and8 per worker, including the in-flight request. Heartbeats, movement permissions, status and control bypass the heavy queue. Overflow replies are not cached or marked pending; clients retry the same sequence after250ms, at most four attempts, and report overload separately from lost connectivity. Queue indices are periodically rebased. Detached monitors release frame and hit-test caches at the next display survey; saved view preferences remain for reconnection.
+
+Compost execution independently enforces seed-only item names and the controller's surplus budget. Emptying a ripe composter uses only an authorized surplus seed, accounting for consumption if another worker empties it between inspection and interaction. With no authorized seeds left it leaves ready bone meal for a later visit rather than selecting arbitrary carried produce.

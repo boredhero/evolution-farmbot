@@ -82,3 +82,30 @@ add(function() U.yield();resumed[1]=current[2] end)
 add(function() U.yield();resumed[2]=current[2] end)
 pump();assert(resumed[1] and resumed[2] and resumed[1]~=resumed[2])
 print('PASS cooperative yields use distinct queued events instead of timer sleeps')
+
+local function size(t)local n=0;for _ in pairs(t) do n=n+1 end;return n end
+local incoming,at={},1;local replies={};local executed={};local urgent=0
+for seq=1,10000 do incoming[#incoming+1]={id=(seq-1)%16+1,m={v=1,kind='job',seq=seq,session='load',data={}}} end
+for _,kind in ipairs({'step','status','control','heartbeat'}) do incoming[#incoming+1]={id=1,m={v=1,kind=kind,seq=10000+#incoming,session='load',data={}}} end
+rednet.receive=function()
+ while not incoming[at] do coroutine.yield() end
+ local r=incoming[at];at=at+1;return r.id,r.m
+end
+rednet.send=function(id,m)replies[#replies+1]={id=id,m=m}end
+os.queueEvent=function()end;os.pullEvent=function()coroutine.yield()end
+local bounded=M.new({protocol='load',allowed=allowed,handle=function(id,m)
+ if m.kind=='job' then executed[m.seq]=(executed[m.seq] or 0)+1 else urgent=urgent+1 end
+ return {ok=true}
+end})
+local receiver=coroutine.create(function()bounded:receive()end);assert(coroutine.resume(receiver))
+assert(bounded.queued==128 and size(bounded.pending)==128 and urgent==4)
+for id=1,16 do assert(bounded.byWorker[id]==8) end
+local busy=0;for _,r in ipairs(replies)do if r.m.busy then busy=busy+1 end end
+assert(busy==10000-128 and not bounded.responses['1:load:129'])
+local processor=coroutine.create(function()bounded:work()end);assert(coroutine.resume(processor))
+assert(bounded.queued==0 and not next(bounded.pending) and not next(bounded.byWorker) and size(executed)==128)
+incoming[at]={id=1,m={v=1,kind='job',seq=129,session='load',data={}}}
+incoming[at+1]={id=1,m={v=1,kind='job',seq=1,session='load',data={}}}
+assert(coroutine.resume(receiver));assert(bounded.queued==1)
+assert(coroutine.resume(processor));assert(executed[129]==1 and executed[1]==1)
+print('PASS 10000 requests retain at most128 heavy requests/8 per worker; urgent traffic bypasses load and rejected requests retry without duplicate execution')
