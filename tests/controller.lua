@@ -74,7 +74,7 @@ parallel={waitForAny=function(network,discover,scan,display,player,console,touch
   local c=coroutine.create(scan);local ok,err=coroutine.resume(c);assert(ok,err)
   assert(state and state.garden.plots['1,1,0'],'Initial scan not persisted')
   local receiver,processor=coroutine.create(network),coroutine.create(request)
-  for _=1,40 do for _,co in ipairs({receiver,processor}) do
+  for _=1,200 do for _,co in ipairs({receiver,processor}) do
     local ok,err=coroutine.resume(co);if not ok then error(err,0) end
   end end
   error('Mailbox did not complete controller scenario')

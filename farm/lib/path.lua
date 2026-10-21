@@ -50,6 +50,17 @@ function P.find(world,start,goals,opts)
     end
   end
   if #valid==0 then return nil,'No accessible approach cell',0 end
+  if targets[source] then return {},targets[source],0 end
+  local componentChecked=false
+  local function connected(onlyCached)
+    if not world.component then return true end
+    local component,labels=world:component(source,opts.yieldFn,onlyCached)
+    if not component then return true end
+    componentChecked=true
+    for id in pairs(targets) do if labels[id]==component then return true end end
+    return false
+  end
+  if not connected(true) then return nil,'No route in surveyed space',0 end
   local function heuristic(x,y,z)
     local best=math.huge
     for i=1,#valid do local g=valid[i];local distance=abs(x-g.x)+abs(y-g.y)+abs(z-g.z)
@@ -77,6 +88,11 @@ function P.find(world,start,goals,opts)
         return ordered,targets[current.id],expanded
       end
       expanded=expanded+1
+      -- Short routes should never pay for a full-volume component flood. Only
+      -- expensive searches build the shared cache; later requests reuse it.
+      if expanded==1000 and not componentChecked and not connected(false) then
+        return nil,'No route in surveyed space',expanded
+      end
       if expanded>(opts.limit or 60000) then return nil,'Search budget reached',expanded end
       if opts.yieldFn and expanded%1000==0 then opts.yieldFn() end
       local id=current.id;local x=id%n;local z=floor(id/n)%n;local y=floor(id/plane)

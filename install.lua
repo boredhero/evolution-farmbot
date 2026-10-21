@@ -887,6 +887,12 @@ function Controller.run(cfg)
       end
     end
     performance.expanded=(performance.expanded or 0)+(expanded or 0)
+    if U.now()-started>0.25 then
+      performance.slowRoutes=performance.slowRoutes or {}
+      local recent=performance.slowRoutes
+      recent[#recent+1]={start=U.copy(start),goals=goals,expanded=expanded,ms=(U.now()-started)*1000,reason=not path and goal or nil}
+      if #recent>8 then table.remove(recent,1) end
+    end
     if path then
       if #parts>0 then
         local count=0;for _ in pairs(cache) do count=count+1 end
@@ -1142,7 +1148,8 @@ function Controller.run(cfg)
           local nextWorld=W.new(cfg.center,cfg.radius)
           nextWorld:ingest(data,U.yield)
           local nextJobs=C.discover(nextWorld,cfg.customCrops,U.yield)
-          if nextWorld.packed~=world.packed then cache={};epoch=epoch+1 end
+          if nextWorld.packed~=world.packed then cache={};epoch=epoch+1
+          else nextWorld.components=world.components;nextWorld.revision=world.revision end
           garden:scan(nextWorld,nextJobs,started,U.now(),cfg.customCrops)
           for k,h in pairs(state.history) do
             local p=garden.data.plots[k]
@@ -2920,6 +2927,17 @@ function P.find(world,start,goals,opts)
     end
   end
   if #valid==0 then return nil,'No accessible approach cell',0 end
+  if targets[source] then return {},targets[source],0 end
+  local componentChecked=false
+  local function connected(onlyCached)
+    if not world.component then return true end
+    local component,labels=world:component(source,opts.yieldFn,onlyCached)
+    if not component then return true end
+    componentChecked=true
+    for id in pairs(targets) do if labels[id]==component then return true end end
+    return false
+  end
+  if not connected(true) then return nil,'No route in surveyed space',0 end
   local function heuristic(x,y,z)
     local best=math.huge
     for i=1,#valid do local g=valid[i];local distance=abs(x-g.x)+abs(y-g.y)+abs(z-g.z)
@@ -2947,6 +2965,11 @@ function P.find(world,start,goals,opts)
         return ordered,targets[current.id],expanded
       end
       expanded=expanded+1
+      -- Short routes should never pay for a full-volume component flood. Only
+      -- expensive searches build the shared cache; later requests reuse it.
+      if expanded==1000 and not componentChecked and not connected(false) then
+        return nil,'No route in surveyed space',expanded
+      end
       if expanded>(opts.limit or 60000) then return nil,'Search budget reached',expanded end
       if opts.yieldFn and expanded%1000==0 then opts.yieldFn() end
       local id=current.id;local x=id%n;local z=floor(id/n)%n;local y=floor(id/plane)
@@ -3329,7 +3352,7 @@ function W.new(center,radius)
   local n=radius*2+1
   return setmetatable({center=U.copy(center),radius=radius,n=n,
     min={x=center.x-radius,y=center.y-radius,z=center.z-radius},
-    packed=string.rep(string.char(255),math.ceil(n*n*n/8)),blocks={}},W)
+    packed=string.rep(string.char(255),math.ceil(n*n*n/8)),blocks={},revision=0},W)
 end
 function W:index(p)
   local x,y,z=p.x-self.min.x,p.y-self.min.y,p.z-self.min.z
@@ -3376,15 +3399,58 @@ function W:ingest(scan,yieldFn)
   end
   local chars={}
   for i=1,math.ceil(self.n^3/8) do chars[i]=string.char(bytes[i] or 0) end
-  self.packed=table.concat(chars); self.blocks=blocks
+  local packed=table.concat(chars)
+  if packed~=self.packed then self.revision=(self.revision or 0)+1;self.components=nil end
+  self.packed=packed; self.blocks=blocks
 end
 function W:observe(pos,block)
   local i=self:index(pos);if not i then return end
   local k=math.floor(i/8)+1;local mask=2^(i%8);local value=self.packed:byte(k)
   local was=math.floor(value/mask)%2==1;local blocked=block and not transient[block.name] or false
-  if was~=blocked then value=value+(blocked and mask or -mask) end
-  self.packed=self.packed:sub(1,k-1)..string.char(value)..self.packed:sub(k+1)
+  if was~=blocked then
+    value=value+(blocked and mask or -mask)
+    self.packed=self.packed:sub(1,k-1)..string.char(value)..self.packed:sub(k+1)
+    self.revision=(self.revision or 0)+1;self.components=nil
+  end
   self.blocks[U.key(pos)]=block and {name=block.name,tags=block.tags or {},x=pos.x,y=pos.y,z=pos.z} or nil
+end
+-- Components contain only surveyed solids. Moving workers must never poison
+-- shared reachability. Publish completion only after the entire flood finishes.
+function W:component(source,yieldFn,onlyCached)
+  local floor=math.floor;local packed=self.packed;local n=self.n;local plane=n*n
+  local masks={1,2,4,8,16,32,64,128}
+  local function blocked(id) return floor(packed:byte(floor(id/8)+1)/masks[id%8+1])%2==1 end
+  if blocked(source) then return nil end
+  local cache=self.components
+  if onlyCached and (not cache or not cache.complete[cache.labels[source]]) then return nil end
+  if not cache then cache={labels={},complete={},serial=0,scanned=0};self.components=cache end
+  local labels=cache.labels;local known=labels[source]
+  if known then
+    if cache.complete[known] then return known,labels end
+    return nil
+  end
+  cache.serial=cache.serial+1;local component=cache.serial
+  local queue={source};local at=1;labels[source]=component
+  local function visit(id)
+    if not labels[id] and not blocked(id) then labels[id]=component;queue[#queue+1]=id end
+  end
+  while at<=#queue do
+    local id=queue[at];local x=id%n;local z=floor(id/n)%n;local y=floor(id/plane)
+    if z>0 then visit(id-n) end
+    if x<n-1 then visit(id+1) end
+    if z<n-1 then visit(id+n) end
+    if x>0 then visit(id-1) end
+    if y<n-1 then visit(id+plane) end
+    if y>0 then visit(id-plane) end
+    if yieldFn and at%1000==0 then
+      yieldFn()
+      -- A scanner or observation may replace topology while this loop yields.
+      if self.components~=cache then return nil end
+    end
+    at=at+1
+  end
+  cache.complete[component]=true;cache.scanned=cache.scanned+#queue
+  return component,labels
 end
 function W:snapshot() return {center=self.center,radius=self.radius,packed=self.packed} end
 return W
@@ -4319,7 +4385,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.5.0\", \"ref\": \"v0.5.0\"}\
+["farm/version.json"] = "{\"version\": \"0.5.1\", \"ref\": \"v0.5.1\"}\
 ",
 }
 local args={...}

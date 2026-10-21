@@ -1,4 +1,4 @@
 {
-  "version": "0.5.0",
-  "notes": "Responsive fleet networking with event yields and short retries; indexed 3D routes and traffic coordination; durable small mutation journals; restart assignment resume; no unnecessary dock trips; 8000 stored fuel and a backup stack. Tested with sixteen simulated workers."
+  "version": "0.5.1",
+  "notes": "Reuse surveyed connectivity across fleet routes and unchanged scans; reject disconnected goals before expensive searches. Includes responsive fleet networking, durable resume and inventory endurance."
 }

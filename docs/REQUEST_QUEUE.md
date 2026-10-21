@@ -29,10 +29,10 @@ Append requests in conversation order. Keep superseded requests and verify deplo
 | 23 | Lifetime system and individual worker statistics with clickable stats page | Deployed to controller 4 and workers 8/9; full suite passes; both workers recorded in durable stats |
 | 24 | Hoe recovery for known farmland crops on tagged dirt; report crop cell and soil separately | Deployed to 4/8/9/21; full suite and file verification pass; actual tilling awaits carried hoe and suitable gap |
 | 25 | Periodically clear ordinary hanging vines a few blocks above known crop spots, including empty planting gaps | Deployed to controller and workers 8/9/10/21; full suite passes |
-| 26 | Fleet traffic-aware routes, transient turtle blockage recovery and waiting/replanning | Implemented; full suite passes; final deployment and restart verification pending |
-| 27 | Investigate ComputerCraft responsiveness and identify measured controller/scheduler bottlenecks | Implemented and profiled: small writes 2-5ms; mailbox, indexed paths, event yields; two-thread config prepared for restart |
-| 28 | Keep working across crop rounds until one empty inventory slot remains; avoid unnecessary dock trips | Implemented; full suite passes; final deployment and restart verification pending |
-| 29 | Longer fuel endurance and useful carried backup coal | Implemented; full suite passes; final deployment and restart verification pending |
+| 26 | Fleet traffic-aware routes, transient turtle blockage recovery and waiting/replanning | Deployed v0.5.0; server restarted and four workers resumed |
+| 27 | Investigate ComputerCraft responsiveness and identify measured controller/scheduler bottlenecks | Implemented and profiled: small writes 2-5ms; mailbox, indexed paths, event yields; two Lua threads active after restart; connectivity cache follow-up in v0.5.1 |
+| 28 | Keep working across crop rounds until one empty inventory slot remains; avoid unnecessary dock trips | Deployed v0.5.0; server restarted and four workers resumed |
+| 29 | Longer fuel endurance and useful carried backup coal | Deployed v0.5.0; server restarted and four workers resumed |
 
 Deployment 2026-10-20 22:27 verified active controller/worker, shared chest coordinates, one Crafter at 1789,65,3796, six blooming aloe plots and thirteen blueberry bushes.
 

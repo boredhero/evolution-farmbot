@@ -36,14 +36,17 @@ end
 print('PASS indexed A* matches BFS with translated coordinates, dynamic traffic and multiple goals')
 local w=W.new(pos(0,0,0),32);local blocks={}
 for y=-32,32 do for z=-32,32 do blocks[#blocks+1]={x=0,y=y,z=z,name='minecraft:stone'} end end
-w:ingest(blocks)
+w:ingest({})
+local traffic={};for _,b in ipairs(blocks) do traffic[U.key(b)]=true end
+-- Warm the static component; dynamic traffic still requires bounded A*.
+w:component(w:index(pos(-1,0,0)))
 local positions,indexes=0,0;local oldPosition,oldIndex=w.position,w.index
 w.position=function(self,id) positions=positions+1;return oldPosition(self,id) end
 w.index=function(self,p) indexes=indexes+1;return oldIndex(self,p) end
 local yields=0
-local path,reason,expanded=P.find(w,pos(-1,0,0),{pos(1,0,0)},{limit=3000,yieldFn=function() yields=yields+1 end})
+local path,reason,expanded=P.find(w,pos(-1,0,0),{pos(1,0,0)},{avoid=traffic,limit=3000,yieldFn=function() yields=yields+1 end})
 assert(not path and reason=='Search budget reached' and expanded==3001)
-assert(yields==3 and positions==0 and indexes<=4,'Search hot loop must not allocate voxel positions or reindex neighbors')
+assert(yields==3 and positions==0 and indexes<=#blocks+4,'Search hot loop must not allocate voxel positions or reindex neighbors')
 local small=W.new(pos(0,0,0),1);small:ingest({})
 for _,d in ipairs(U.dirs) do small:observe(d,{name='minecraft:stone'}) end
 local _,failure,count=P.find(small,pos(0,0,0),{pos(1,1,1)})

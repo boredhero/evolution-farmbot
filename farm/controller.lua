@@ -110,6 +110,12 @@ function Controller.run(cfg)
       end
     end
     performance.expanded=(performance.expanded or 0)+(expanded or 0)
+    if U.now()-started>0.25 then
+      performance.slowRoutes=performance.slowRoutes or {}
+      local recent=performance.slowRoutes
+      recent[#recent+1]={start=U.copy(start),goals=goals,expanded=expanded,ms=(U.now()-started)*1000,reason=not path and goal or nil}
+      if #recent>8 then table.remove(recent,1) end
+    end
     if path then
       if #parts>0 then
         local count=0;for _ in pairs(cache) do count=count+1 end
@@ -365,7 +371,8 @@ function Controller.run(cfg)
           local nextWorld=W.new(cfg.center,cfg.radius)
           nextWorld:ingest(data,U.yield)
           local nextJobs=C.discover(nextWorld,cfg.customCrops,U.yield)
-          if nextWorld.packed~=world.packed then cache={};epoch=epoch+1 end
+          if nextWorld.packed~=world.packed then cache={};epoch=epoch+1
+          else nextWorld.components=world.components;nextWorld.revision=world.revision end
           garden:scan(nextWorld,nextJobs,started,U.now(),cfg.customCrops)
           for k,h in pairs(state.history) do
             local p=garden.data.plots[k]
