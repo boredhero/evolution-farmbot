@@ -28,11 +28,21 @@ local transient={['computercraft:turtle_normal']=true,['computercraft:turtle_adv
 function W:ingest(scan,yieldFn)
   -- Only call after a successful COMPLETE scan. Missing entries mean air here.
   local bytes,blocks={},{}
+  local function mark(p)
+    local i=self:index(p);if not i then return end
+    local k=math.floor(i/8)+1;local mask=2^(i%8);local v=bytes[k] or 0
+    if math.floor(v/mask)%2==0 then bytes[k]=v+mask end
+  end
   for j,b in ipairs(scan) do
     local p=U.add(self.center,b)
     local i=self:index(p)
     if i and b.name and b.name~='minecraft:air' then
       blocks[U.key(p)]={name=b.name,tags=b.tags or {},x=p.x,y=p.y,z=p.z}
+      if b.name=='minecraft:cactus' then
+        -- A solid turtle beside cactus breaks it. Reserve space for up to two
+        -- new growth blocks too, so growth between scans cannot invalidate this.
+        for dy=0,2 do for d=1,4 do mark(U.add(U.add(p,{x=0,y=dy,z=0}),U.dirs[d])) end end
+      end
       if not transient[b.name] then
         local k=math.floor(i/8)+1; local mask=2^(i%8)
         local v=bytes[k] or 0
@@ -44,6 +54,14 @@ function W:ingest(scan,yieldFn)
   local chars={}
   for i=1,math.ceil(self.n^3/8) do chars[i]=string.char(bytes[i] or 0) end
   self.packed=table.concat(chars); self.blocks=blocks
+end
+function W:observe(pos,block)
+  local i=self:index(pos);if not i then return end
+  local k=math.floor(i/8)+1;local mask=2^(i%8);local value=self.packed:byte(k)
+  local was=math.floor(value/mask)%2==1;local blocked=block and not transient[block.name] or false
+  if was~=blocked then value=value+(blocked and mask or -mask) end
+  self.packed=self.packed:sub(1,k-1)..string.char(value)..self.packed:sub(k+1)
+  self.blocks[U.key(pos)]=block and {name=block.name,tags=block.tags or {},x=pos.x,y=pos.y,z=pos.z} or nil
 end
 function W:snapshot() return {center=self.center,radius=self.radius,packed=self.packed} end
 return W

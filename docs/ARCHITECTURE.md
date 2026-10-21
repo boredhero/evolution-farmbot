@@ -58,6 +58,22 @@ obstacle map changes. Workers inspect every movement destination and report unex
 obstructions for replanning. Crop history and replant obligations survive restarts; the route
 cache itself is rebuilt after reboot.
 
+The controller owns a persisted, finite harvest round shared by every worker. At the start
+of a round it snapshots currently eligible crop positions and groups them by block name.
+Groups sort by known-ready count, then total due count; within a worker's current group,
+distance orders the jobs. Growth still requires inspection: unknown maturity is not counted
+as confirmed ripe. Existing leases prevent duplicate assignments. New growth waits for the
+next round, so a continuously replenished large group cannot starve a singleton. Repairs
+override batching. Removed, temporarily ineligible and unreachable jobs leave the current
+round and can be reconsidered later. Worker-specific seed eligibility still applies.
+
+Workers consume carried fuel and merge compatible partial stacks before requesting work.
+Inventory pressure returns them when all 16 slots are occupied, replacing the former
+three-empty-slot rule. Fuel checks, paused/no-work returns and recovery can still dock early.
+At unload, retain four planting items for the current batch and one for each other
+outstanding replant or vulnerable last plant. Other planting items and byproducts go to
+output. This replaces the old reserve of four items for up to eight unrelated crop types.
+
 "Learning" here is explicit bookkeeping and adaptive revisit intervals, not an LLM or neural
 network. A\* minimizes movement steps in the surveyed map; it does not optimize turtle turns or
 guarantee globally optimal scheduling of the whole farm.
@@ -178,13 +194,16 @@ To generate local layout previews from the actual renderer with **simulated data
 | Farmer's Delight rice panicles | Harvest upper age-3 panicle, preserve rice base |
 | Immersive Engineering industrial hemp | Upper half only, preserve farmland/root |
 | Cottonly cotton; Hexerei sage | Age 7; cotton seeds / singular `sage_seed`; deferred replants supported |
-| BWG blueberries; vanilla sweet berries | Mature bushes on grass; harvest and replant with berries |
+| BWG blueberries and aloe | Right-click mature plants with a retained stick; preserve bush/aloe base; interaction datapack required |
+| Vanilla sweet berries | Mature harvest/replant with berries |
 | Cocoa | Mature pods attached to jungle logs; attachment-aware placement |
-| Sugar cane | Top-down harvesting above an intact root on sand/red sand |
+| Sugar cane | Clear every upper block in one visit, preserve one root; tagged sand/dirt and mud |
 | Melons and pumpkins | Harvest fruit blocks wherever present, as requested; stems remain untouched |
 | Nether wart | Mature harvest/replant on soul sand |
 | Torchflower and pitcher crop | Recognize mature plants and planting items; need external sniffer seeds/pods for sustainable repeated harvesting |
-| Bamboo and cactus | Top harvesting with root retained; conservative soil rules |
+| Cactus | Clear every upper block from above, preserve root, accept tagged sand including BWG windswept sand |
+| Bamboo | Explicitly excluded |
+| Silent Gear flax/fluffy, Occultism datura, Ars magebloom, Eternal Starlight crinoa/pungency, Supplementaries flax | Audited planting items and maturity; lower-half handling where appropriate |
 | Kelp | Top harvesting only where reachable from air above; submerged routes are intentionally not supported |
 | Glow berries and upper rope tomatoes | Optional interaction compatibility datapack below; never broken as a fallback |
 
@@ -194,16 +213,15 @@ ground tomatoes and optional upper rope tomatoes are distinct cases.
 
 ### Optional right-click compatibility
 
-`compat-datapack/` contains a Minecraft 1.21.1 datapack adding only cave vines and upper rope
-tomatoes to `computercraft:turtle_can_use`. It does not modify drops or enable arbitrary block
-interactions. **It is prepared locally, not installed on the server.**
+`compat-datapack/` contains a Minecraft 1.21.1 datapack adding cave vines, upper rope
+tomatoes, BWG blueberry bushes and blooming aloe to `computercraft:turtle_can_use`. It does not modify drops or enable arbitrary block
+interactions. The live farm installs this compatibility pack.
 
 To enable these optional crops, install that directory as
 `world/datapacks/evolution-farmbot-interactions`, reload datapacks, and put a few ordinary sticks
 in the shared bank. The worker selects a stick and uses `turtle.place*()` for the approved
 interaction, checks that the plant remains, and checks that maturity changed. Without the tag, it
-reports the unsupported interaction and leaves the plant intact. Blueberries do not require this
-datapack.
+reports the unsupported interaction and leaves the plant intact. Blueberries and aloe require this datapack.
 
 ## Update mechanism
 
@@ -263,3 +281,53 @@ Relevant upstream references:
 - [Wired inventory transfers](https://tweaked.cc/generic_peripheral/inventory.html)
 - [Maintainer discussion of the 1.21 turtle-use tag regression](https://github.com/cc-tweaked/CC-Tweaked/issues/2011) and [the corresponding fix](https://github.com/cc-tweaked/CC-Tweaked/commit/4710ee5bcc4c8d256d6dfe477450911a00915b60)
 - [BWG's upstream 1.21.1 project](https://github.com/Potion-Studios/Oh-The-Biomes-Weve-Gone/tree/1.21.1)
+
+### Soil tags, map and harvest routing
+
+Discovery accepts semantic Minecraft/common/legacy Forge sand, dirt and farmland tags, including
+NeoForge villager farmlands, with vanilla/MA fallbacks. Tags such as `maintains_farmland` are not
+soil tags and are not accepted. Unsupported crop identities remain inspect-only.
+AUTO projects crops from all heights; manual Y controls isolate a floor. Blue worker numbers are
+independent of the red player arrow, and the legend includes actual XYZ coordinates.
+Verified harvest results update occupancy immediately, allowing side approaches through newly
+cleared rows beneath torches without waiting for another scanner sweep.
+
+### Seed crafting
+
+`seed_recipes.lua` catalogs verified one-ingredient pack recipes. `crafting.lua` handles an empty
+vanilla Crafter with a durable insertion/output journal. The controller automatically discovers
+and leases machines. Workers approach the output face, insert one ingredient, pulse redstone and
+verify the seed output. An interrupted or unexpected recipe never silently consumes another input.
+
+### Composting and estimated growth
+
+`compost.lua` derives eligible quantities only for actual planting seeds from completed batches,
+excluding in-flight leases and replant debts. It preserves at least 16 seeds across available bank
+stock and the worker, plus any larger worker reserve. Workers discover the nearest vanilla composter,
+use the game's own compostability checks, empty finished compost into bone meal, and send output to ME.
+Unsupported seeds, unavailable machines and low fuel fall back to normal unloading. No ME extraction
+or deletion of arbitrary items is performed. Add `minecraft:composter` to the interaction datapack.
+
+`growth.lua` learns smoothed durations from observed planting-to-ripe harvest cycles. It estimates
+remaining time from last-inspected age, explicitly including sampling delay and possible offline time.
+Old maturity observations remain visible, dimmed; `e` marks estimated ripe, never an inspected ripe
+state. Workers always inspect and authorize actual maturity. New crop types show learning until a
+measured cycle is available.
+
+### Exclusive crop rounds and shared fleet cycles
+
+The controller persists `batches.owners`, `workers`, `pending`, `visited`, `finished` and `cycle`.
+One round is one crop type assigned exclusively to one worker; all rounds form a shared fleet cycle.
+Assignments are saved before dispatch, but locations become checked only on acknowledged results.
+Releasing a job for fuel or a route budget restores eligibility without releasing crop ownership.
+After reboot, transient lease tokens reset while pending plants and crop ownership persist.
+Repair work respects other workers' crop ownership. Completed types cannot be reopened by another
+worker until all accessible types finish. Growing-plant inspection timers never filter a round;
+physical route failures may still cool down. Column crops have a stable root-based visit identity.
+
+`pickup.lua` collects loose items from air and recognized plants only, never arbitrary inventories.
+Workers opportunistically collect along movement, then sweep a deduplicated 3x3 neighborhood around
+harvested plants before changing crop types or unloading. Collection goals preserve their actual Y
+levels and use crop roots for tall columns. Routes remain non-destructive and return-fuel-budgeted.
+New sugar cane/cactus growth blocking an old top approach updates the target and raises the approach,
+without changing the job token/root identity. Obstacles immediately update controller occupancy.

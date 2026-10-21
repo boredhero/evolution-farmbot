@@ -1,6 +1,6 @@
 # Evolution FarmBot
 
-Autonomous crop farming for ComputerCraft: Tweaked on FTB Evolution 1.39.0 / Minecraft 1.21.1.
+Autonomous crop farming for ComputerCraft: Tweaked on FTB Evolution 1.45.1 / Minecraft 1.21.1.
 
 You plant crops wherever you like. A computer with a Geo Scanner finds them, mining turtles walk
 to them, check whether they are ripe, harvest and replant them, and two monitor walls show you a
@@ -19,6 +19,10 @@ numbered walkthrough from crafting the parts to the first harvest.
 
 ## What it does
 
+- **Works in crop batches.** The controller coordinates finite rounds across the fleet,
+  prioritizing the largest groups known to be ready and keeping each worker on one crop
+  type where possible. Small plots get a turn before regrown crops restart the round.
+  Workers merge compatible stacks and use all 16 slots before returning for inventory space.
 - **Finds crops by itself.** Every 120 seconds the Geo Scanner surveys a 65x65x65 cube around the
   controller. Anything supported that you planted shows up on the next survey.
 - **Harvests and replants.** A turtle travels to the plant, inspects it for real maturity, and
@@ -36,9 +40,14 @@ numbered walkthrough from crafting the parts to the first harvest.
 
 Supported crops include vanilla farmland crops, all normally named Mystical Agriculture crops,
 Farmer's Delight, Actually Additions, Immersive Engineering hemp, Cottonly, Hexerei sage, BWG
-blueberries, cocoa, sugar cane, melons, pumpkins, nether wart, bamboo, cactus and kelp. See the
+blueberries, aloe vera, cocoa, sugar cane, melons, pumpkins, nether wart, cactus and kelp. Bamboo is left alone. See the
 [full crop table](docs/ARCHITECTURE.md#crop-coverage). Crops it does not recognise are visited and
 inspected but never destroyed.
+
+Workers automatically inherit the farm's shared output/fuel chest coordinates during setup.
+Place an empty vanilla Crafter within scanner coverage with a reachable output face to let workers
+convert carried produce into seeds using the verified pack recipes. No Crafter coordinates are needed.
+The AUTO map shows crops at all heights; blue numbers identify workers and the red arrow identifies you.
 
 ## What you need
 
@@ -225,3 +234,17 @@ viable seed source for a crop with random seed drops.
 Copyright (C) 2026 boredhero. Licensed under the **GNU General Public License, version 3 only**
 (`GPL-3.0-only`). See [LICENSE](LICENSE) and [NOTICE](NOTICE). The installer ships both files and
 writes them onto the in-game computer alongside the source modules.
+
+Old crop inspections keep their `g`/`R` symbol and dim instead of becoming `?`.
+`e` means estimated ripe from learned farm cycles, not a verified ripe plant; tap a tile for an
+approximate remaining time. A turtle always checks actual maturity before harvesting.
+
+Place a vanilla composter within scanner coverage to cull surplus seed items from finished batches.
+It preserves active-job/replant supplies and a seed safety stock. Food crops go to ME normally.
+The interaction datapack must include the composter; unsupported seeds are exported normally.
+
+A **round** sweeps one crop type across all heights; a **cycle** covers all accessible crop types
+across the fleet. Each round has one exclusive worker. Unloading, refueling and restarts preserve
+its unchecked plants. No bot repeats a completed type until the shared cycle finishes.
+Old inspection timers do not hide plants during a sweep. Workers collect loose ground items along
+their paths and sweep around harvested plants before changing types or unloading.

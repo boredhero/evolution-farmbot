@@ -10,7 +10,7 @@ N.DISCOVERY='evolution-farmbot-discover'
 function N.answer(cfg)
   local id,m=rednet.receive(N.DISCOVERY)
   if type(m)=='table' and m.kind=='who' then
-    rednet.send(id,{kind='controller',group=cfg.group,controller=os.getComputerID(),center=cfg.center},N.DISCOVERY)
+    rednet.send(id,{kind='controller',group=cfg.group,controller=os.getComputerID(),center=cfg.center,stations=cfg.sharedStations},N.DISCOVERY)
   end
 end
 function N.discover(timeout)
@@ -21,7 +21,7 @@ function N.discover(timeout)
   repeat
     local id,m=rednet.receive(N.DISCOVERY,math.max(0,deadline-U.now()))
     if id and type(m)=='table' and m.kind=='controller' and type(m.group)=='string' and not seen[id] then
-      seen[id]=true;found[#found+1]={controller=id,group=m.group,center=m.center}
+      seen[id]=true;found[#found+1]={controller=id,group=m.group,center=m.center,stations=m.stations}
     end
   until U.now()>=deadline
   table.sort(found,function(a,b) return a.controller<b.controller end)

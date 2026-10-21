@@ -3,6 +3,18 @@
   "values": [
     "minecraft:cave_vines",
     "minecraft:cave_vines_plant",
-    { "id": "farmersdelight:tomatoes_on_rope", "required": false }
+    {
+      "id": "farmersdelight:tomatoes_on_rope",
+      "required": false
+    },
+    {
+      "id": "biomeswevegone:blueberry_bush",
+      "required": false
+    },
+    {
+      "id": "biomeswevegone:blooming_aloe_vera",
+      "required": false
+    },
+    "minecraft:composter"
   ]
 }

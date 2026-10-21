@@ -19,3 +19,7 @@ luac.out
 
 # Agent worktrees
 .claude/
+
+# Python tooling caches
+__pycache__/
+*.pyc

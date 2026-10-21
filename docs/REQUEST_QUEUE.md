@@ -1,0 +1,35 @@
+# FarmBot request queue
+
+Append requests in conversation order. Keep superseded requests and verify deployment before marking done.
+
+| Order | Request | State |
+| --- | --- | --- |
+| 1 | Fleet-wide crop batches, largest ready group first, fair finite rotation | Previously deployed; retained |
+| 2 | Greedy inventory, compact stacks, dump stray items and surplus planting items | Previously deployed; retained |
+| 3 | Replant mismatch fixes and audit modded crops | Deployed; tests pass |
+| 4 | Generic seed conversion for supported crops with real pack recipes; detect placed Crafter | Deployed; real canola-to-seed conversion verified |
+| 5 | Detect composters and cull excess seeds after completed batches | Deployed 22:38; tests pass; protects seed stock, debts and active batches |
+| 6 | BWG aloe and blueberry right-click harvest | Deployed; datapack enabled |
+| 7 | Cactus upper-only harvest; preserve root | Deployed; tests pass |
+| 8 | Torch-obstructed crop routes; accept tagged windswept sand | Deployed; tests pass |
+| 9 | Sugar cane down to one root per visit | Deployed; tests pass |
+| 10 | Exclude bamboo; finish each finite crop batch before switching | Deployed; tests pass |
+| 11 | Map worker accuracy and semantic farmland/dirt tags | Position concern retracted; tags deployed |
+| 12 | Purple B marker | Superseded by request 15 |
+| 13 | Additional workers inherit existing shared chests | Deployed; tests pass |
+| 14 | AUTO map displays colored crops from all farm heights | Deployed; tests pass |
+| 15 | Keep blue numbered worker markers | Deployed; tests pass |
+| 16 | Retain old maturity observations instead of reverting to question marks | Deployed 22:38; tests pass |
+| 17 | Learned approximate crop growth estimates | Deployed 22:38; tests pass |
+| 18 | Collect scattered drops around plants without taking chest contents | Deployed; full test suite passes |
+| 19 | Finish all unvisited plants of current crop across heights, including later eligibility | Deployed; full test suite passes |
+| 20 | One crop round survives unloading/refueling/restarts; all other crop rounds form a fleet cycle | Deployed; full test suite passes |
+| 21 | Exclusive owner per crop round, globally completed types cannot repeat on another bot | Deployed; full test suite passes |
+| 22 | Sugar cane growing into its approach cell must retarget and replan above new top | Deployed; full test suite passes |
+| 23 | Lifetime system and individual worker statistics with clickable stats page | Pending; next feature after public release |
+
+Deployment 2026-10-20 22:27 verified active controller/worker, shared chest coordinates, one Crafter at 1789,65,3796, six blooming aloe plots and thirteen blueberry bushes.
+
+Deployment 2026-10-20 22:38: composting, persistent observation symbols and learned estimates installed on computers 4 and 9; composter interaction tag loaded. Backup: `/home/noah/minecraft/farmbot-backups/crop-crafting-map-20261020-223704`. Reloads must be announced in advance.
+
+Final runtime deployment: 2026-10-20 23:01, backup `/home/noah/minecraft/farmbot-backups/exclusive-crop-rounds-20261020-230120`. Controller active, cycle 1 / round 1 owned exclusively by worker 9 (wheat), 19 checked plants at verification. Live canola-to-seed conversion previously verified. Lifetime statistics are the next pending implementation request.

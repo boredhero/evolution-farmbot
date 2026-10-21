@@ -14,19 +14,42 @@ local CommandHistory=require('farm.lib.command_history')
 local Players=require('farm.lib.players')
 local Hardware=require('farm.lib.hardware')
 local Help=require('farm.lib.help')
+local Batches=require('farm.lib.batches')
+local SeedRecipes=require('farm.lib.seed_recipes')
+local Compost=require('farm.lib.compost')
+local Growth=require('farm.lib.growth')
 local Controller={}
 function Controller.run(cfg)
   U.openModem()
   local protocol=N.protocol(cfg)
   local state=S.load('farm/data/controller',{active=false,history={},excluded={}})
   state.history=state.history or {};state.excluded=state.excluded or {}
+  state.batches=state.batches or {};state.growth=state.growth or {}
+  if state.batches.schema~=2 then state.batches={schema=2} end
+  state.batches.inflight={};state.batches.repairs={} -- Lease tokens are renewed after a controller restart; unfinished plants remain pending.
   local garden=Garden.new(state.garden);state.garden=garden.data
   local metrics=Metrics.new(state.metrics,U.now());state.metrics=metrics.data
   local dashboard=Dashboard.new(state.displays);state.displays=dashboard.views
+  if not state.allHeightMap then
+    for _,v in pairs(state.displays) do if v.role=='map' then v.layer=nil;v.zoom=1;v.cx=nil;v.cz=nil end end
+    state.allHeightMap=true
+  end
   local installedVersion=Dashboard.installedVersion()
   local dashboardError
   local world=W.new(cfg.center,cfg.radius)
   local jobs,workers,leases,obstacles,responses,cache={},{},{},{},{},{}
+  local craftLocks={}
+  local function hasCrafter()
+    for _,b in pairs(world.blocks) do if b.name=='minecraft:crafter' then return true end end
+    return false
+  end
+  local function plantingInventory(inventory)
+    local out={};for item,count in pairs(inventory or {}) do out[item]=count end
+    if hasCrafter() then
+      for seed in pairs(SeedRecipes.recipes) do if SeedRecipes.find(seed,out) then out[seed]=math.max(out[seed] or 0,1) end end
+    end
+    return out
+  end
   local scanAt,lastScan,scanError=0,0,'Waiting for first scan'
   local epoch=0;local hits=0;local scanBusy=false;local lastSave=0
   local stopping=false
@@ -85,6 +108,7 @@ function Controller.run(cfg)
   end
   local function fresh() return lastScan>0 and U.now()-lastScan<cfg.scanInterval*3 end
   local function release(id)
+    Batches.release(state.batches,id)
     for k,l in pairs(leases) do if l.owner==id then leases[k]=nil end end
   end
   local function handle(id,m)
@@ -95,6 +119,7 @@ function Controller.run(cfg)
     if d.fuel then w.fuel=d.fuel end
     if d.status then w.status=tostring(d.status):sub(1,120) end
     if d.inventory then w.inventory=d.inventory end
+    for _,lock in pairs(craftLocks) do if lock.owner==id then lock.untilTime=U.now()+120 end end
     for k,l in pairs(leases) do if l.owner==id then
       l.untilTime=U.now()+120
       local p=garden.data.plots[k]
@@ -104,6 +129,10 @@ function Controller.run(cfg)
     elseif m.kind=='hello' then
       if not world:inside(d.dock) then return nil,'Dock is outside the scanner cube' end
       w.dock=d.dock;w.name=d.name;w.seedBuffer=d.seedBuffer;w.dryRun=d.dryRun
+      w.remoteMode=d.remoteMode==true
+      if not cfg.sharedStations and d.stations and d.stations.output then
+        cfg.sharedStations=d.stations;S.save('farm/config',cfg)
+      end
       return {active=state.active,center=cfg.center,radius=cfg.radius}
     elseif m.kind=='seed_plan' then
       local stock=Seeds.stock(cfg.seedSource);local needed={}
@@ -111,7 +140,22 @@ function Controller.run(cfg)
         local target=math.max(16,math.min(64,garden:living(seed)+garden:debts(seed)*2))
         needed[seed]=math.max(0,target-(stock[seed] or 0))
       end
-      return {seeds=garden.data.seeds,needed=needed}
+      local batch=state.batches.workers and state.batches.workers[tostring(id)]
+      local keep=garden:reserves(batch);local seeds={}
+      for item in pairs(garden.data.seeds) do seeds[item]=true end
+      for _,p in pairs(garden.data.plots) do if p.job.mode=='use' and p.job.item then
+        seeds[p.job.item]=true;keep[p.job.item]=1
+      end end
+      local ingredients={}
+      for seed,amount in pairs(keep) do
+        if ((w.inventory or {})[seed] or 0)<amount then
+          local recipe=SeedRecipes.find(seed,w.inventory or {})
+          if recipe then ingredients[recipe.item]=true end
+        end
+      end
+      for item in pairs(ingredients) do seeds[item]=true;keep[item]=math.max(keep[item] or 0,1) end
+      local compost=Compost.plan(garden,state.batches,leases,w.inventory or {},keep,stock)
+      return {seeds=seeds,needed=needed,keep=keep,compost=compost}
     elseif m.kind=='bank_store' then
       if not w.dock or not U.equal(d.pos,w.dock) then return nil,'Seed storage requires worker at its dock' end
       return Seeds.store(cfg.seedSource,w.seedBuffer)
@@ -139,9 +183,36 @@ function Controller.run(cfg)
         end
       end
       return nil,'No active crop assignment for seed delivery'
+    elseif m.kind=='compost_station' then
+      local best,distance
+      for _,b in pairs(world.blocks) do if b.name=='minecraft:composter' then
+        local dist=U.distance(d.pos,b)
+        if not distance or dist<distance then best=b;distance=dist end
+      end end
+      return best and {pos=U.copy(best)} or {}
+    elseif m.kind=='craft_station' then
+      local best,distance
+      for key,b in pairs(world.blocks) do if b.name=='minecraft:crafter' then
+        local lock=craftLocks[key]
+        if (not d.target or U.equal(d.target,b)) and (not lock or lock.owner==id or lock.untilTime<U.now()) then
+          local dist=U.distance(d.pos,b)
+          if not distance or dist<distance then best=b;distance=dist end
+        end
+      end end
+      if not best then return nil,'No available Crafter in scanner coverage' end
+      craftLocks[U.key(best)]={owner=id,untilTime=U.now()+120}
+      return {pos=U.copy(best)}
+    elseif m.kind=='craft_done' then
+      for key,lock in pairs(craftLocks) do if lock.owner==id then craftLocks[key]=nil end end
+      return {ok=true}
+    elseif m.kind=='control' then
+      return {recover=cfg.workerRecover and cfg.workerRecover[tostring(id)]}
     elseif m.kind=='status' then return summary()
     elseif m.kind=='blocked' then
-      if d.block and world:inside(d.block) then obstacles[U.key(d.block)]=U.now()+20 end
+      if d.block and world:inside(d.block) then
+        obstacles[U.key(d.block)]=U.now()+20
+        if d.name then world:observe(d.block,{name=d.name});cache={};epoch=epoch+1;scanAt=0 end
+      end
       return {ok=true}
     elseif m.kind=='route' then
       if not fresh() then return nil,'Waiting for a fresh scanner map' end
@@ -153,10 +224,18 @@ function Controller.run(cfg)
       local j=d.job
       local l=j and leases[j.key]
       if not l or l.owner~=id or l.token~=d.token then return {ok=true,stale=true} end
-      leases[j.key]=nil
+      leases[j.key]=nil;Batches.finished(state.batches,id,j)
+      if d.after~=nil then
+        world:observe(j.pos,d.after)
+        if d.outcome=='harvested' and j.mode=='cane' and j.rootY then
+          for y=j.rootY+1,j.pos.y do world:observe({x=j.pos.x,y=y,z=j.pos.z},false) end
+        end
+        cache={};epoch=epoch+1
+      end
       garden:finish(j,d.token,d.after,world,cfg.customCrops,U.now())
       local h=state.history[j.key] or {interval=60}
-      h.seen=U.now();h.name=j.name;h.outcome=d.outcome;h.detail=d.detail;h.state=d.state
+      Growth.record(state.growth,h,j,d,U.now())
+      h.seen=U.now();h.name=d.after and d.after.name or j.name;h.outcome=d.outcome;h.detail=d.detail;h.state=d.state
       if d.after~=nil then h.observed=d.after or nil;h.observedAt=U.now() end
       metrics:record(j,d.outcome,d.after,U.now(),d.detail)
       if d.outcome=='harvested' then
@@ -172,10 +251,17 @@ function Controller.run(cfg)
       if d.outcome=='harvested' and (j.mode=='fruit' or j.mode=='cane' or j.mode=='rice' or j.mode=='upper') then jobs[j.key]=nil end
       save();return {ok=true}
     elseif m.kind=='job' then
+      if type(d.dryRun)=='boolean' then w.dryRun=d.dryRun end
+      local desired=cfg.workerModes and cfg.workerModes[tostring(id)]
+      local assigned=false
+      for _,l in pairs(leases) do if l.owner==id and l.untilTime>=U.now() then assigned=true end end
+      if w.remoteMode and desired~=nil and desired~=w.dryRun and not assigned then
+        return {mode=desired and 'dry' or 'live'}
+      end
       if not state.active or not fresh() then return {wait=10,reason=scanError or 'Paused'} end
       -- Retries/reconnections recover the existing assignment, never acquire a second.
       for k,l in pairs(leases) do
-        if l.untilTime<U.now() then leases[k]=nil
+        if l.untilTime<U.now() then leases[k]=nil;Batches.release(state.batches,l.owner)
         elseif l.owner==id then
           local path,goal=route(id,d.pos,C.goals(l.job))
           if path then w.route=path;return {job=l.job,path=path,goal=goal,token=l.token} end
@@ -184,15 +270,35 @@ function Controller.run(cfg)
       end
       local options={}
       local stock=Seeds.stock(cfg.seedSource)
-      for _,j in ipairs(garden:tasks(w.inventory,stock,U.now(),w.dryRun)) do
+      local fleet={};local inspectOnly=w.dryRun
+      for _,other in pairs(workers) do if U.now()-other.seen<30 then
+        inspectOnly=inspectOnly or other.dryRun
+        for item,count in pairs(other.inventory or {}) do fleet[item]=(fleet[item] or 0)+count end
+      end end
+      local function due(j,h)
+        -- Only physical route failures cool down. Growth timers never hide a plant from its round.
+        return not h or h.outcome~='unreachable' or (h.due or 0)<=U.now()
+      end
+      local all={}
+      for _,j in ipairs(garden:tasks(plantingInventory(fleet),stock,U.now(),inspectOnly)) do
+        local h=state.history[j.key]
+        if not state.excluded[j.key] and not leases[j.key] and due(j,h) then
+          local ready=h and h.observed and C.ready(j,h.observed)==true
+          all[#all+1]={job=j,ready=ready}
+        end
+      end
+      for _,j in ipairs(garden:tasks(plantingInventory(w.inventory),stock,U.now(),w.dryRun)) do
         local k=j.key
         local h=state.history[k]
-        if not state.excluded[k] and not leases[k] and (not h or (h.due or 0)<=U.now()) then
+        if not state.excluded[k] and not leases[k] and due(j,h) then
           local bonus=j.repair and 10000 or (j.seed and garden:debts(j.seed)>0 and 1000 or 0)
           options[#options+1]={job=j,score=U.distance(d.pos,j.pos)-bonus}
         end
       end
-      table.sort(options,function(a,b)return a.score<b.score end)
+      for key,p in pairs(garden.data.plots) do
+        if p.intent and state.batches.pending and state.batches.pending[key] then all[#all+1]={job=p.job} end
+      end
+      options=Batches.order(state.batches,all,options,id)
       for i=1,math.min(12,#options) do
         local j=options[i].job
         local path,goal=route(id,d.pos,C.goals(j))
@@ -200,13 +306,15 @@ function Controller.run(cfg)
           leaseSerial=leaseSerial+1
           local token=tostring(id)..':'..boot..':'..leaseSerial..':'..j.key
           leases[j.key]={owner=id,untilTime=U.now()+120,job=j,token=token}
-          w.route=path
+          Batches.assigned(state.batches,id,j)
+          w.route=path;save() -- Persist round ownership before the worker leaves or unloads.
           return {job=j,path=path,goal=goal,token=token}
         end
         state.history[j.key]=state.history[j.key] or {interval=60}
         state.history[j.key].due=U.now()+120
         state.history[j.key].seen=U.now()
         state.history[j.key].outcome='unreachable'
+        Batches.skip(state.batches,j.key)
       end
       return {wait=10,reason='No ready reachable work'}
     elseif m.kind=='release' then release(id);return {ok=true} end
@@ -260,6 +368,8 @@ function Controller.run(cfg)
             if p and h.name~=p.job.name then state.history[k]=nil end
           end
           world=nextWorld;jobs=nextJobs;lastScan=U.now();scanError=nil
+          state.crafters={}
+          for _,b in pairs(world.blocks) do if b.name=='minecraft:crafter' then state.crafters[#state.crafters+1]=U.copy(b) end end
           metrics.data.scans=metrics.data.scans+1
           S.save('farm/data/map',world:snapshot())
           save()
@@ -277,9 +387,18 @@ function Controller.run(cfg)
       'Remembered replant gaps: '..s.debts,
       'Unknown crop rules: '..s.unknown,'Last scan: '..s.scanAge..'s ago',
       'Cached routes used: '..hits}
+    lines[#lines+1]='Cycle '..tostring(state.batches.cycle or 0)..' | crop round '..tostring(state.batches.round or 0)
+    lines[#lines+1]='Crafters detected: '..tostring(#(state.crafters or {}))
     if scanError then lines[#lines+1]='Scanner: '..scanError end
     if dashboardError then lines[#lines+1]='Display: '..dashboardError end
-    for id,w in pairs(workers) do lines[#lines+1]=id..': '..(w.status or 'connected') end
+    for id,w in pairs(workers) do
+      lines[#lines+1]=id..': '..(w.status or 'connected')
+      lines[#lines+1]='  Mode: '..(w.dryRun and 'dry' or 'live')..'  Fuel: '..tostring(w.fuel or '?')
+      local batch=state.batches.workers and state.batches.workers[tostring(id)]
+      if batch then lines[#lines+1]='  Crop batch: '..batch end
+      local desired=cfg.workerModes and cfg.workerModes[tostring(id)]
+      if desired~=nil and desired~=w.dryRun then lines[#lines+1]='  Pending mode: '..(desired and 'dry' or 'live') end
+    end
     return lines
   end
   local playerTracker=Players.new()
@@ -296,7 +415,7 @@ function Controller.run(cfg)
     metrics:tick(U.now())
     local s=summary()
     return {now=U.now(),active=state.active,world=world,center=cfg.center,radius=cfg.radius,version=installedVersion,
-      plots=garden.data.plots,history=state.history,excluded=state.excluded,workers=workers,
+      plots=garden.data.plots,history=state.history,growth=state.growth,excluded=state.excluded,workers=workers,
       players=playerList,playerError=playerTracker.error,
       cache=cache,cacheHits=hits,metrics=metrics.data,sessionUptime=U.now()-metrics.started,
       scanAge=s.scanAge,scanError=scanError,freshFor=cfg.scanInterval*3}
@@ -348,6 +467,7 @@ function Controller.run(cfg)
     while true do
       write('farm> ');local line=commandHistory:read();local words={}
       for word in line:gmatch('%S+') do words[#words+1]=word end
+      if words[1]=='farm' then table.remove(words,1) end
       local cmd=words[1]
       if not cmd then -- blank line: reprompt without a scolding
       elseif cmd=='help' then for _,l in ipairs(Help.lines(words[2])) do print(l) end
@@ -372,6 +492,22 @@ function Controller.run(cfg)
         if stopping then print('Stop requested: '..(drainReason() or 'ready to exit')) end
       elseif cmd=='allow' and tonumber(words[2]) then
         cfg.allowed[tostring(tonumber(words[2]))]=true;S.save('farm/config',cfg);print('Paired worker '..words[2])
+      elseif cmd=='worker' then
+        local id=tonumber(words[2]);local mode=words[4]
+        local recover=words[3]=='recover' and not words[4]
+        if not id or id<0 or id%1~=0 or (not recover and (words[3]~='mode' or (mode~='live' and mode~='dry') or words[5])) then
+          print('worker ID mode live|dry OR worker ID recover')
+        elseif not cfg.allowed[tostring(id)] then print('Pair this worker with allow ID first.')
+        elseif workers[id] and workers[id].remoteMode==false then print('Update this worker for remote mode commands.')
+        elseif recover then
+          cfg.workerRecover=cfg.workerRecover or {}
+          cfg.workerRecover[tostring(id)]=(cfg.workerRecover[tostring(id)] or 0)+1
+          S.save('farm/config',cfg);print('Worker '..id..': recovery queued between jobs.')
+        else
+          cfg.workerModes=cfg.workerModes or {};cfg.workerModes[tostring(id)]=mode=='dry'
+          S.save('farm/config',cfg)
+          print('Worker '..id..': '..mode..' queued between jobs.')
+        end
       elseif cmd=='exclude' or cmd=='include' then
         local x,y,z=tonumber(words[2]),tonumber(words[3]),tonumber(words[4])
         if x and y and z then state.excluded[U.key({x=x,y=y,z=z})]=cmd=='exclude' or nil;save();print('Updated.') end

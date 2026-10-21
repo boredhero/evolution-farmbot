@@ -3,6 +3,7 @@
 local U=require('farm.lib.util')
 local Players=require('farm.lib.players')
 local C=require('farm.lib.crops')
+local Growth=require('farm.lib.growth')
 local F=require('farm.lib.frame')
 local D={};D.__index=D
 function D.installedVersion()
@@ -41,7 +42,6 @@ function D.classify(p,h,m)
   if p.debt then return 'debt' end
   if p.job.mode=='probe' then return 'unsupported' end
   if not h or not h.observed or h.observed.name~=p.job.name then return 'unknown' end
-  if m.now-(h.observedAt or 0)>m.freshFor then return 'stale' end
   local ready,reason=C.ready(p.job,h.observed)
   if ready then return 'ready' end
   if reason=='growing' then return 'growing' end
@@ -51,7 +51,7 @@ function D.new(views) return setmetatable({views=views or {},frames={},hits={}},
 function D:view(name)
   if not self.views[name] then
     local hasMap=false;for _,v in pairs(self.views) do if v.role=='map' then hasMap=true end end
-    self.views[name]={role=hasMap and 'stats' or 'map',zoom=2,cache=true,page=1}
+    self.views[name]={role=hasMap and 'stats' or 'map',zoom=1,cache=true,page=1}
   end
   return self.views[name]
 end
@@ -117,7 +117,7 @@ function D:render(m,v,w,h)
     local minX,minZ=cx-math.floor(span/2),cz-math.floor(span/2)
     local mw,mh=math.min(w-4,span*2),math.min(hh-13,span)
     local mx,my=math.floor((w-mw)/2)+1,5
-    f:write(3,3,('CROP Y=%d | NORTH ^ | %dx zoom | %dx%d blocks'):format(layer,v.zoom or 1,span,span),'0')
+    f:write(3,3,('CROP Y=%d | NORTH ^ | %dx zoom | %dx%d blocks'):format(layer,v.zoom or 1,span,span)..(not v.layer and ' | ALL HEIGHTS' or ''),'0')
     f:box(mx-1,my-1,mw+2,mh+2,'SURVEY / '..count(m.cache)..' CACHED ROUTES')
     local function point(p)
       if p.x<minX or p.z<minZ or p.x>=minX+span or p.z>=minZ+span then return end
@@ -131,7 +131,7 @@ function D:render(m,v,w,h)
       elseif name:find('water',1,true) then ch='~';fg='b'
       elseif m.world:name({x=p.x,y=p.y-1,z=p.z})=='minecraft:water' then ch='~';fg='b'
       elseif m.world:blocked(p) then ch=' ';bg='7'
-      elseif C.farmland(m.world:name({x=p.x,y=p.y-1,z=p.z})) then ch='.';fg='c'
+      elseif C.farmland(m.world:block({x=p.x,y=p.y-1,z=p.z})) then ch='.';fg='c'
       elseif p.x%8==0 and p.z%8==0 then ch='+';fg='7' end
       f:write(mx+dx,my+dy,ch,fg,bg)
     end end
@@ -158,16 +158,21 @@ function D:render(m,v,w,h)
     end
     local priorities={excluded=0,unknown=1,stale=1,growing=2,unsupported=3,ready=4,busy=5,debt=6}
     local occupied={}
-    for k,p in pairs(m.plots) do if p.job.pos.y==layer then
+    for k,p in pairs(m.plots) do if not v.layer or p.job.pos.y==layer then
       local px,py=point(p.job.pos)
       if px then
         local status=D.classify(p,m.history[k],m);local cell=px..','..py
         if not occupied[cell] or priorities[status]>=occupied[cell] then
           local bg=D.cropColor(p.job.name);local fg=cropInk(bg)
+          local observed=m.history[k]
+          if (status=='ready' or status=='growing') and observed and m.now-(observed.observedAt or 0)>m.freshFor then fg='8' end
           if status=='debt' then bg='e';fg='0'
           elseif status=='busy' then bg='4';fg='f'
           elseif status=='excluded' then bg='7';fg='0' end
-          f:write(px,py,symbols[status],fg,bg);occupied[cell]=priorities[status]
+          local symbol=symbols[status]
+          local eta=Growth.estimate(m.growth,p.job,observed,m.now)
+          if status=='growing' and eta==0 then symbol='e' end
+          f:write(px,py,symbol,fg,bg);occupied[cell]=priorities[status]
           hits[#hits+1]={x=px,y=py,w=1,h=1,action='select',value=k}
         end
       end
@@ -176,9 +181,9 @@ function D:render(m,v,w,h)
     if sx and m.center.y==layer then f:write(sx,sy,'S','0','b') end
     for i,id in ipairs(ids) do
       local worker=m.workers[id];local p=worker.pos
-      if p and (p.y==layer or p.y==layer+1) then
+      if p then
         local px,py=point(p)
-        if px then f:write(px,py,tostring(i%10),m.now-worker.seen<30 and '0' or '8',i%2==1 and 'b' or 'a') end
+        if px then f:write(px,py,tostring(i%10),m.now-worker.seen<30 and '0' or '8','b') end
       end
     end
     local viewer,nearby=nil,0
@@ -205,11 +210,11 @@ function D:render(m,v,w,h)
     elseif m.playerError then f:write(3,hh-7,'PLAYERS: '..m.playerError,'e')
     elseif m.players then f:write(3,hh-7,'No players in range','8') end
     f:write(3,hh-6,'COLOR = CROP TYPE | tap a tile for its name','0')
-    f:write(3,hh-5,'R ripe g growing ? unseen ! gap * busy  red arrow = you','0')
+    f:write(3,hh-5,'R/g last seen | e estimated ripe | dim=old ? unseen ! gap','0')
     local fleet={}
     for i,id in ipairs(ids) do
       local worker=m.workers[id]
-      fleet[#fleet+1]=i..'=Turtle #'..id..' Y='..tostring(worker.pos and worker.pos.y or '?')
+      fleet[#fleet+1]=(i%10)..'=Bot #'..id..' '..(worker.pos and U.key(worker.pos) or '?')
     end
     f:write(3,hh-4,table.concat(fleet,'  |  '),'3')
     f:write(3,hh-3,'Layers: '..table.concat((function() local a={};for _,r in ipairs(levels(m)) do a[#a+1]=r.y..' ('..r.n..')' end;return a end)(),' / '),'0')
@@ -218,7 +223,10 @@ function D:render(m,v,w,h)
       f:write(3,hh-2,(short(p.job.name)..' ['..D.classify(p,history,m)..']'):sub(1,w-4),D.cropColor(p.job.name))
       local seen=history and history.observedAt and math.floor(m.now-history.observedAt)..'s ago' or 'never inspected'
       local age=history and history.observed and history.observed.state and history.observed.state.age
-      f:write(3,hh-1,('%s | %s%s'):format(v.selected,seen,age and ' | age '..age..'/'..tostring(p.job.age or '?') or ''),'0')
+      local eta,samples=Growth.estimate(m.growth,p.job,history,m.now)
+      local estimate=eta and (eta==0 and ' | ~ripe now' or ' | ~'..math.ceil(eta/60)..'m to ripe') or ' | growth learning'
+      if samples then estimate=estimate..' ('..samples..' cycles)' end
+      f:write(3,hh-1,('%s | %s%s%s'):format(v.selected,seen,age and ' | age '..age..'/'..tostring(p.job.age or '?') or '',estimate),'0')
     else f:write(3,hh-2,': cached route | . active route | Y-/Y+ floors','0') end
   else
     local metrics=m.metrics;local rows={};local live,gaps,ready,growing,unknown=0,0,0,0,0

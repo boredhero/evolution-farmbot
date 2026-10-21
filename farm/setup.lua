@@ -24,6 +24,7 @@ function Setup.pair(cfg)
   found=ok and found or {}
   if #found==1 then
     cfg.controller,cfg.group=found[1].controller,found[1].group
+    cfg.stations=found[1].stations
     print('Paired with controller #'..cfg.controller..' on farm network "'..cfg.group..'".')
     return
   end
@@ -31,7 +32,7 @@ function Setup.pair(cfg)
     print('More than one controller answered:')
     for _,c in ipairs(found) do print('  #'..c.controller..'  network "'..c.group..'"') end
     cfg.controller=number('Which controller computer ID')
-    for _,c in ipairs(found) do if c.controller==cfg.controller then cfg.group=c.group end end
+    for _,c in ipairs(found) do if c.controller==cfg.controller then cfg.group=c.group;cfg.stations=c.stations end end
     if cfg.group then print('Using farm network "'..cfg.group..'".');return end
     print('That controller did not answer; entering the name by hand.')
   else
@@ -72,21 +73,22 @@ function Setup.run(role)
     end
     -- Older CC builds may not expose equipped-item detail. The installer guide covers this.
     if not tool then print('Ensure this is a Mining Turtle (diamond pickaxe) with an Ender Modem.') end
-    print('Give the coordinates of the chests this turtle should use. Use F3')
-    print('Targeted Block coordinates. They can be anywhere it can walk to.')
+    if cfg.stations and cfg.stations.output then print('Using this farm\'s shared output/fuel chests.') end
     print('Put coal/charcoal in the turtle. Leave an empty horizontal neighbor.')
     input('Press Enter when ready','')
     require('farm.worker').refuel()
+    if not cfg.stations or not cfg.stations.output then
     cfg.stations={output=position('Chest/ME interface to PUT harvested items into')}
     if input('Is there a separate chest to TAKE fuel from? yes/no','yes')~='no' then
       cfg.stations.fuel=position('Chest to TAKE coal/charcoal from')
+    end
     end
     print('Output at '..U.key(cfg.stations.output)..
       (cfg.stations.fuel and ', fuel at '..U.key(cfg.stations.fuel) or ', no fuel chest'))
     local seedFound,seed=turtle.inspectDown()
     local function chest(name) return name=='minecraft:chest' or name=='minecraft:barrel' or name=='minecraft:trapped_chest' end
     if seedFound and chest(seed.name) then cfg.seedBlock=seed.name end
-    cfg.seedBuffer=input('Wired inventory name of seed delivery chest BELOW (blank for dry run)','')
+    cfg.seedBuffer=input('Wired inventory name of seed delivery chest BELOW (blank if none)','')
     if cfg.seedBuffer~='' then assert(cfg.seedBlock,'Place a vanilla seed-delivery chest/barrel below this turtle') end
     cfg.dock,cfg.dockHeading=require('farm.worker').calibrate()
     cfg.fuelReserve=256

@@ -17,8 +17,10 @@ parallel={waitForAny=function(f) f() end}
 local function run(options)
   local position={x=0,y=1,z=0};local heading=1;local selected=1
   local grid={['0,1,-1']={name='minecraft:chest'},['0,2,0']={name='minecraft:chest'}}
+  if options.station then grid[U.key(options.station)]={name='minecraft:chest'} end
+  for k,b in pairs(options.grid or {}) do grid[k]=clone(b) end
   local inv=clone(options.inventory or {});local saved=clone(options.saved or {})
-  local results,events={},{};local nextJob=0;local moveCalls=0
+  local results,events={},{};local nextJob=0;local moveCalls=0;local modeSent,configSaved
   local function target(side)
     return U.add(position,U.dirs[side=='Down' and 6 or side=='Up' and 5 or heading])
   end
@@ -30,6 +32,15 @@ local function run(options)
     error('Mock inventory overflow')
   end
   turtle={getItemDetail=function(i) return clone(inv[i]) end,getItemCount=count,
+    getItemSpace=function(i) return 64-count(i) end,
+    compareTo=function(i) return inv[selected] and inv[i] and inv[selected].name==inv[i].name or false end,
+    transferTo=function(i)
+      local n=math.min(count(selected),64-count(i))
+      if n==0 then return false end
+      inv[i].count=inv[i].count+n;inv[selected].count=inv[selected].count-n
+      if inv[selected].count==0 then inv[selected]=nil end
+      return true
+    end,
     select=function(i) selected=i;return true end,getFuelLevel=function() return 'unlimited' end,
     refuel=function() return false end,
     turnLeft=function() heading=((heading-2)%4)+1;return true end,
@@ -39,7 +50,7 @@ local function run(options)
     turtle['dig'..side]=function()
       local k=U.key(target(side));local b=grid[k]
       assert(b and b.name~='minecraft:stone' and b.name~='minecraft:chest','Tried to dig non-crop!')
-      assert(saved.pending,'Missing local write-ahead journal before dig')
+      if b.name=='minecraft:wheat' then assert(saved.pending,'Missing local write-ahead journal before dig') end
       events[#events+1]='dig:'..k;grid[k]=nil
       local n=options.drops and options.drops[k] or 0
       add('minecraft:wheat_seeds',n);add('minecraft:wheat',1)
@@ -51,8 +62,17 @@ local function run(options)
       inv[selected].count=inv[selected].count-1;if inv[selected].count==0 then inv[selected]=nil end
       grid[k]={name='minecraft:wheat',state={age=0}};events[#events+1]='plant:'..k;return true
     end
-    turtle['suck'..side]=function() return false end
+    turtle['suck'..side]=function()
+      if options.station and U.key(target(side))==U.key(options.station) then
+        events[#events+1]='suck'..side
+        add('minecraft:dirt',1);return true
+      end
+      return false
+    end
     turtle['drop'..side]=function(n)
+      if options.station then
+        eq(U.key(target(side)),U.key(options.station));events[#events+1]='drop'..side
+      end
       if options.fullChest then error(stop) end
       n=math.min(n or count(selected),count(selected))
       if inv[selected] then inv[selected].count=inv[selected].count-n;if inv[selected].count==0 then inv[selected]=nil end end
@@ -61,6 +81,7 @@ local function run(options)
   end
   local function move(side)
     moveCalls=moveCalls+1;local p=target(side)
+    if options.entityBlock and U.key(p)=='1,1,0' then return false,'Movement obstructed' end
     if grid[U.key(p)] then return false,'obstructed' end
     position=p;return true
   end
@@ -68,21 +89,29 @@ local function run(options)
   turtle.up=function() return move('Up') end
   turtle.down=function() return move('Down') end
   S.load=function() return clone(saved) end
-  S.save=function(_,data) saved=clone(data) end
+  S.save=function(path,data)
+    if path=='farm/config' then configSaved=clone(data) else saved=clone(data) end
+  end
   Worker.calibrate=function() return clone(position),heading end
   local function path(from,to)
     local out={};local p=clone(from)
-    for _,axis in ipairs({'x','z','y'}) do while p[axis]~=to[axis] do
+    if options.grid and p.x==0 and to.x~=0 then p=clone(p);p.x=1;out[#out+1]=p end
+    for _,axis in ipairs(options.grid and {'y','x','z'} or {'x','z','y'}) do while p[axis]~=to[axis] do
       p=clone(p);p[axis]=p[axis]+(p[axis]<to[axis] and 1 or -1);out[#out+1]=p
     end end
     return out
   end
   N.client=function()
     return function(kind,data)
+      if kind=='craft_station' then return nil,'No available Crafter in scanner coverage' end
+      if kind=='control' then return options.recover and {recover=1} or {} end
       if kind=='hello' then return {active=true} end
-      if kind=='seed_plan' then return {seeds={['minecraft:wheat_seeds']=true},needed={}} end
+      if kind=='seed_plan' then return options.seedPlan or {seeds={['minecraft:wheat_seeds']=true},needed={}} end
       if kind=='status' then return {active=not options.paused} end
-      if kind=='route' then return {path=path(data.pos,data.goals[1]),goal=data.goals[1]} end
+      if kind=='route' then
+        if options.noReplan and data.goals[1].x==1 and not data.preview then return nil,'No accessible approach cell' end
+        return {path=path(data.pos,data.goals[1]),goal=data.goals[1]}
+      end
       if kind=='blocked' then events[#events+1]='blocked';return {ok=true} end
       if kind=='recover' then events[#events+1]='recover';return {ok=true} end
       if kind=='begin' then
@@ -91,6 +120,8 @@ local function run(options)
         return {ok=true}
       end
       if kind=='job' then
+        if options.mode and not modeSent then modeSent=true;return {mode=options.mode} end
+        if options.mode then eq(data.dryRun,options.mode=='dry') end
         nextJob=nextJob+1;local j=options.jobs[nextJob];if not j then error(stop) end
         j=clone(j);local goal=U.add(j.pos,U.dirs[5])
         if not j.repair then grid[j.key]={name=j.name,state={age=7}} end
@@ -107,15 +138,62 @@ local function run(options)
   end
   local cfg={controller=2,dock={x=0,y=1,z=0},dockHeading=1,
     outputBlock='minecraft:chest',fuelBlock='minecraft:chest',fuelReserve=256,dryRun=options.dryRun}
+  if options.station then cfg.stations={output=options.station,fuel=options.station} end
   local ok,err=pcall(Worker.run,cfg)
   assert(not ok and (err==stop or options.loseResult),tostring(err))
-  return {results=results,events=events,saved=saved,grid=grid,inventory=inv,moves=moveCalls}
+  return {results=results,events=events,saved=saved,grid=grid,inventory=inv,moves=moveCalls,config=configSaved}
 end
 local function crop(x,repair)
   return {pos={x=x,y=0,z=0},key=x..',0,0',name='minecraft:wheat',age=7,
     seed='minecraft:wheat_seeds',mode='replant',version=x,repair=repair}
 end
 local tests={
+ {'sugar cane growing into the approach cell raises the target and clears the column without breaking its root',function()
+   local name='minecraft:sugar_cane';local grid={}
+   for y=0,2 do grid['2,'..y..',0']={name=name} end
+   local job={pos={x=2,y=1,z=0},key='2,1,0',name=name,mode='cane',rootY=0,onlyAbove=true}
+   local r=run({jobs={job},grid=grid})
+   eq(r.results[1].outcome,'harvested');eq(r.grid['2,2,0'],nil);eq(r.grid['2,1,0'],nil)
+   eq(r.grid['2,0,0'].name,name)
+ end},
+ {'column harvest removes every upper cane/cactus block in one visit and preserves the root',function()
+   for _,name in ipairs({'minecraft:sugar_cane','minecraft:cactus'}) do
+     local grid={};for y=0,2 do grid['2,'..y..',0']={name=name} end
+     local job={pos={x=2,y=2,z=0},key='2,2,0',name=name,mode='cane',rootY=0,onlyAbove=true}
+     local r=run({jobs={job},grid=grid})
+     eq(r.results[1].outcome,'harvested');eq(r.grid['2,2,0'],nil);eq(r.grid['2,1,0'],nil)
+     eq(r.grid['2,0,0'].name,name)
+   end
+ end},
+ {'batch unloading exports unrelated planting items and byproducts, keeping only requested reserves',function()
+   local r=run({jobs={},seedPlan={seeds={wheat_seed=true,coffee=true,onion=true},needed={coffee=64},keep={wheat_seed=4,onion=1}},
+     inventory={[1]={name='wheat_seed',count=40},[2]={name='coffee',count=4},[3]={name='onion',count=4},[4]={name='sprig',count=2}}})
+   eq(r.inventory[1].count,4);eq(r.inventory[2],nil);eq(r.inventory[3].count,1);eq(r.inventory[4],nil)
+ end},
+ {'remote recovery is acknowledged durably without dropping inventory or erasing records',function()
+   local r=run({jobs={},recover=true,saved={marker='preserved'}})
+   eq(r.config.recoverAck,1);eq(r.saved.marker,'preserved')
+ end},
+ {'duplicate planting-item stacks export surplus and subsequent string without requiring a bank',function()
+   local r=run({jobs={},seedPlan={seeds={['minecraft:carrot']=true},needed={['minecraft:carrot']=64}},
+     inventory={[1]={name='minecraft:carrot',count=4},[2]={name='minecraft:carrot',count=7},[3]={name='minecraft:string',count=2}}})
+   eq(r.inventory[1].count,4);eq(r.inventory[2],nil);eq(r.inventory[3],nil)
+ end},
+ {'remote modes are saved and acknowledged before the next crop assignment',function()
+   local live=run({jobs={crop(1)},dryRun=true,mode='live',drops={['1,0,0']=1}})
+   eq(live.config.dryRun,false);eq(live.results[1].outcome,'harvested')
+   local dry=run({jobs={crop(1)},dryRun=false,mode='dry'})
+   eq(dry.config.dryRun,true);eq(dry.results[1].outcome,'dry_run')
+ end},
+ {'output and fuel stations work from all six sides, including returning unwanted fuel items',function()
+   for i=1,6 do
+     local station=U.add({x=0,y=1,z=0},U.dirs[i])
+     local r=run({jobs={},station=station,inventory={[1]={name='minecraft:wheat',count=2}}})
+     local side=i==5 and 'Up' or i==6 and 'Down' or ''
+     eq(r.events[1],'drop'..side);eq(r.events[2],'suck'..side);eq(r.events[3],'drop'..side)
+     eq(r.inventory[1],nil)
+   end
+ end},
  {'harvest with empty seed supply, remember hole, harvest next plant, revisit hole',function()
    local r=run({jobs={crop(1),crop(2),crop(1,true)},drops={['1,0,0']=0,['2,0,0']=3}})
    eq(r.results[1].outcome,'deferred');eq(r.results[2].outcome,'harvested');eq(r.results[3].outcome,'replanted')
@@ -141,7 +219,17 @@ local tests={
  {'movement obstruction is never dug for a route',function()
    local r=run({jobs={crop(1)},blockRoute=true});eq(r.results[1].outcome,'unreachable')
    eq(r.grid['1,1,0'].name,'minecraft:stone')
+   assert(r.results[1].detail:find('Blocked at 1,1,0 by minecraft:stone',1,true))
    for _,e in ipairs(r.events) do assert(not e:match('^dig:')) end
+ end},
+ {'failed replanning preserves the last obstacle coordinates and block name',function()
+   local r=run({jobs={crop(1)},blockRoute=true,noReplan=true})
+   assert(r.results[1].detail:find('No accessible approach cell',1,true))
+   assert(r.results[1].detail:find('Blocked at 1,1,0 by minecraft:stone',1,true))
+ end},
+ {'movement failure without an inspectable block reports destination and reason',function()
+   local r=run({jobs={crop(1)},entityBlock=true})
+   assert(r.results[1].detail:find('Movement failed at 1,1,0: Movement obstructed',1,true))
  end},
  {'pause prevents harvest while permitting homing',function()
    local r=run({jobs={crop(1)},paused=true});eq(r.results[1].outcome,'unreachable')

@@ -55,6 +55,19 @@ For each computer:
 
 Repeat on all four. Leave them running.
 
+If you administer the server, `tools/gps_beacons.py` can check already configured,
+loaded GPS computers against their actual server positions, without typing coordinates:
+
+```sh
+python3 tools/gps_beacons.py --server-dir /path/to/server
+```
+
+Run it on the server host with RCON enabled in `server.properties`. To correct any
+reported differences, stop workers first and rerun with `--apply`. It backs up GPS
+configs and restarts affected running beacons. Unloaded beacons are not checked.
+Recalibrate worker parking spots if they were recorded with incorrect GPS coordinates.
+This tool corrects existing GPS configs; it does not install new beacons.
+
 ## 3. Place the controller and Geo Scanner
 
 Put your Advanced Computer roughly between the farms. Attach one Ender Modem and place the Geo Scanner **directly against the computer**. Record the scanner block's Targeted Block coordinates.
@@ -64,6 +77,9 @@ The scanner reaches 32 blocks in each direction, including vertically. Both farm
 Install the program on this computer using the same command, but finish the physical wired network below before completing the controller wizard. You can also wait to install until step 6.
 
 ## 4. Build both turtle docks
+
+Coordinate-based output and fuel chests can be reached from any of their six sides,
+including above or below. Leave at least one adjacent cell and a route to it clear.
 
 Make this arrangement twice, with each turtle pointing toward its output chest:
 
@@ -158,9 +174,23 @@ start
 
 Watch the turtle visit plants and return to the dock. In inspection mode it moves, consumes fuel and may unload inventory, but **does not harvest or plant**. Confirm it can reach the indoor and outdoor farms. Keep clear air paths; it will not mine doors or walls to get through.
 
+The controller batches crop types across the fleet by default. `status` shows the harvest
+round and each worker's current crop batch. Workers merge partial stacks and use all 16
+slots; the terminal reports why it returns if fuel, a route, or available work requires an
+earlier trip. No scheduler option needs configuring.
+
 The map updates every two seconds; maturity is what a turtle last inspected. A full survey normally runs every 120 seconds, so newly planted areas may take up to that long to appear.
 
 ## 9. Enable harvesting, then add the second turtle
+
+After setup, updated workers can be switched centrally at the controller's `farm>`
+prompt: `worker 9 mode live` enables harvesting for worker 9, and `worker 9 mode dry`
+restores inspection mode. `farm worker 9 mode live` is also accepted. Mode changes
+apply between jobs, survive restarts, and wait for offline workers to reconnect.
+Use `start` on the controller to enable work; changing a mode does not unpause it.
+Use `worker 9 recover` to recalibrate its position/facing and retry docking between
+jobs. This preserves inventory and replant records, and also works while it is
+retrying a failed unload. A powered-off worker must be turned on to receive commands.
 
 1. At the controller, run `pause` and wait for the first turtle to return.
 2. Hold Ctrl+T in the turtle terminal to stop its program and return to the CraftOS prompt.
@@ -217,3 +247,30 @@ Both check the repository's `release.json`, display installed/available versions
 The running controller pauses farming after confirmation and refuses to install until known workers are at their docks and have no active job leases. If it tells you to wait, let them return and run the command again. When updating a turtle or using the stopped CraftOS prompt, first pause farming on the controller and let every turtle finish its work and dock. Update devices individually; this is not a fleet-wide rollout. Run `start` on the controller when ready to resume.
 
 Backups remain under `farm/install-backups/update-*`. Handled installation failures roll back changed program files; interrupted transactions have a recovery journal checked at startup. If damage prevents startup/recovery code itself from loading, retain the backups and journal and ask for help—do not delete farm data. Old, unlisted modules are deliberately not deleted automatically. Checksums detect accidental corruption, not a malicious repository owner; the trusted source is this repository over HTTPS.
+
+## Additional workers and automatic seed crafting
+
+Install the current FarmBot code on another Mining Ender Turtle and run `farm setup worker`.
+It discovers the controller and inherits its existing output/fuel chest coordinates. Give it coal,
+place it in its own clear parking cell, and let GPS record that cell. On the controller, run
+`allow <id>`, then start the worker with `farm start`. Use `worker <id> mode live` on the
+controller when ready. Each worker has its own parking space; shared chests need no duplicate setup.
+
+A vanilla Crafter can sit near the crops or controller, anywhere inside scanner coverage.
+Keep it empty, unpowered, and leave its output face accessible. Workers discover it and insert
+one ingredient, pulse it, and receive the seeds through its output face. The controller reserves
+the machine for one worker at a time. This uses verified single-ingredient recipes from this pack,
+including modded recipes; plants with no such recipe still need their actual seed drops.
+
+For blueberry/aloe picking, install `compat-datapack` as
+`world/datapacks/evolution-farmbot-interactions`, run `/reload`, and give each worker one stick.
+The worker retains the stick and picks the plants without breaking their base.
+
+A vanilla composter is also discovered automatically anywhere in the scanned area. Leave a reachable
+face for the turtle; no modem or coordinates are required. Update the interaction datapack once when
+adding composting support. Finished-batch surplus seeds are composted; protected supplies and edible
+produce are retained/exported normally. No composter means normal ME unloading continues.
+
+Workers share one crop cycle, but each crop round belongs to only one worker. Adding a worker gives
+it an unfinished, unowned crop type. Returning to unload does not abandon its current crop. Loose
+crop drops are collected on paths and in a nearby sweep automatically; no new setup is needed.

@@ -1,6 +1,6 @@
 {
   "pack": {
     "pack_format": 48,
-    "description": "FarmBot: allow CC turtles to pick glow berries and rope tomatoes (1.21.1)"
+    "description": "FarmBot: plant-preserving turtle picking for berries, rope tomatoes and aloe (1.21.1)"
   }
 }

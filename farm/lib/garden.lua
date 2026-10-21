@@ -49,6 +49,19 @@ function G:debts(seed)
   for _,p in pairs(self.data.plots) do if p.debt and (not seed or p.job.seed==seed) then count=count+1 end end
   return count
 end
+function G:reserves(batch)
+  local keep={}
+  for _,p in pairs(self.data.plots) do
+    local j=p.job;local item=j.seed or j.item
+    if item then
+      if (j.crop or j.name)==batch then keep[item]=4
+      elseif p.debt or (p.live and j.seed and not j.guaranteedSeed and self:living(item)<=1) then
+        keep[item]=math.max(keep[item] or 0,1)
+      end
+    end
+  end
+  return keep
+end
 function G:canHarvest(job,hasSeed)
   if not job.seed or hasSeed or job.guaranteedSeed then return true end
   if self:living(job.seed)>1 then return true end

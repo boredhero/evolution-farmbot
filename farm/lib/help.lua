@@ -7,6 +7,13 @@ Help.width=51 -- advanced computer terminal is 51 columns
 -- names[] must list every token consoleLoop dispatches on; usage[] is what the
 -- overview prints, grouped by group in the order the topics appear here.
 Help.topics={
+{names={'worker'},group='Run',usage={'worker ID mode live|dry','worker ID recover'},detail={
+  'Change a paired worker mode between jobs.',
+  'The worker saves it without needing a reboot.',
+  'Offline workers apply it when they reconnect.',
+  'The farm must be started to harvest crops.',
+  'Recover recalibrates GPS/facing and retries dock.',
+  'Inventory and replant records are preserved.'}},
 {names={'status'},group='Watch',usage={'status'},detail={
   'Running or paused, crop and worker counts,',
   'remembered replant gaps, the age of the last',

@@ -1,4 +1,4 @@
 {
-  "version": "0.3.6",
-  "notes": "New farm station and farm stations commands on a worker. Move the output or fuel chest by giving new coordinates, without rerunning setup and without losing an unfinished harvest. Changing a station also forgets the block learned at the old spot, so swapping a chest for a barrel or an ME interface is accepted instead of refused."
+  "version": "0.4.0",
+  "notes": "Advanced Peripherals 0.8 compatibility; exclusive fleet-wide crop rounds across all heights; expanded modded crops; seed crafting and composting; shared worker stations; greedy inventory and scattered drop collection; improved navigation and persistent crop maps with learned growth estimates."
 }

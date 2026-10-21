@@ -47,3 +47,12 @@ assert(wrongId:find('#4',1,true));assert(wrongId:find('#9',1,true))
 eq(N.mismatch({group='autofarm',controller=4},{{controller=4,group='autofarm'}}),nil)
 eq(N.mismatch({group='autofarm',controller=4},{}),nil)
 print('PASS a name or ID mismatch is reported with both values and the command that fixes it')
+
+local shared={output={x=10,y=20,z=30},fuel={x=11,y=20,z=30}}
+sent={};inbox={{id=12,m={kind='who'}}}
+N.answer({group='autofarm',sharedStations=shared})
+inbox={{id=4,m=sent[1].m}}
+local Setup=require('farm.setup');local cfg={}
+Setup.pair(cfg)
+assert(cfg.controller==4 and cfg.stations.output.x==10 and cfg.stations.fuel.x==11)
+print('PASS controller discovery supplies shared chest defaults directly to additional worker setup')

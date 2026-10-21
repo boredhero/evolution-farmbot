@@ -36,10 +36,10 @@ print('PASS responsive frames, live counts and lifetime per-crop statistics')
 local p
 for _,v in pairs(m.plots) do if v.live and not v.intent and v.job.age then p=v;break end end
 eq(D.classify(p,nil,m),'unknown')
-eq(D.classify(p,{observed={name=p.job.name,state={age=p.job.age}},observedAt=1},m),'stale')
+eq(D.classify(p,{observed={name=p.job.name,state={age=p.job.age}},observedAt=1},m),'ready')
 eq(D.classify(p,{observed={name=p.job.name,state={age=p.job.age}},observedAt=999},m),'ready')
 eq(D.classify(p,{observed={name=p.job.name,state={age=0}},observedAt=999},m),'growing')
-print('PASS no invented live maturity: unknown/stale/mature/just-replanted distinguished')
+print('PASS no invented live maturity: unseen and last-observed maturity retained without inventing current growth')
 local writes=0
 local monitor={setCursorPos=function() end,blit=function() writes=writes+1 end}
 local cache=frame:flush(monitor);eq(writes,81)
@@ -139,3 +139,15 @@ for _,size in ipairs({{60,34},{121,81}}) do
   assert(contains(versionFrame,'v0.2.2'));assert(contains(versionFrame,'[TEXT +]'))
 end
 print('PASS statistics shows installed metadata version at both text scales; missing/corrupt metadata is safe')
+
+local auto,autoHits=d:render(m,{role='map',zoom=1},164,81)
+local ys={}
+for _,hit in ipairs(autoHits) do if hit.action=='select' then ys[m.plots[hit.value].job.pos.y]=true end end
+local n=0;for _ in pairs(ys) do n=n+1 end
+assert(n>1 and contains(auto,'ALL HEIGHTS'),'AUTO shows colored crops at every farm height')
+local blueBot=false
+for y=1,auto.h do local text,_,bg=auto:row(y)
+ for x=1,auto.w do if text:sub(x,x):match('%d') and bg:sub(x,x)=='b' then blueBot=true end end
+end
+assert(blueBot and contains(auto,'1=Bot #'),'bot is a blue number with an explicit legend')
+print('PASS multilevel AUTO crop projection and blue numbered bot markers distinct from the player arrow')
