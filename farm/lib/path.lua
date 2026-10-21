@@ -61,6 +61,30 @@ function P.find(world,start,goals,opts)
     return false
   end
   if not connected(true) then return nil,'No route in surveyed space',0 end
+  local function reverseConnected()
+    -- A moving worker can seal a tiny destination pocket inside an otherwise
+    -- connected map. Exhausting this bounded reverse flood proves failure;
+    -- hitting its bound proves nothing, so normal exact A* must continue.
+    local queue,seen={},{};local at=1;local found=false
+    for id in pairs(targets) do queue[#queue+1]=id;seen[id]=true end
+    local function add(id)
+      if id==source then found=true
+      elseif not seen[id] and not blocked(id) then seen[id]=true;queue[#queue+1]=id end
+    end
+    while at<=#queue do
+      if #queue>=512 then return true end
+      local id=queue[at];local x=id%n;local z=floor(id/n)%n;local y=floor(id/plane)
+      if z>0 then add(id-n) end
+      if x<n-1 then add(id+1) end
+      if z<n-1 then add(id+n) end
+      if x>0 then add(id-1) end
+      if y<n-1 then add(id+plane) end
+      if y>0 then add(id-plane) end
+      if found then return true end
+      at=at+1
+    end
+    return false
+  end
   local function heuristic(x,y,z)
     local best=math.huge
     for i=1,#valid do local g=valid[i];local distance=abs(x-g.x)+abs(y-g.y)+abs(z-g.z)
@@ -90,8 +114,10 @@ function P.find(world,start,goals,opts)
       expanded=expanded+1
       -- Short routes should never pay for a full-volume component flood. Only
       -- expensive searches build the shared cache; later requests reuse it.
-      if expanded==1000 and not componentChecked and not connected(false) then
-        return nil,'No route in surveyed space',expanded
+      if expanded==1000 then
+        if not reverseConnected() or (not componentChecked and not connected(false)) then
+          return nil,'No route in surveyed space',expanded
+        end
       end
       if expanded>(opts.limit or 60000) then return nil,'Search budget reached',expanded end
       if opts.yieldFn and expanded%1000==0 then opts.yieldFn() end

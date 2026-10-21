@@ -388,7 +388,7 @@ function Controller.run(cfg)
         scanAt=U.now()+cfg.scanInterval;scanBusy=false
       end
       if U.now()-lastSave>60 then save() end
-      if U.now()-profileSaved>30 then S.save('farm/data/performance',{since=performance.since,untilTime=U.now(),samples=performance.samples,expanded=performance.expanded});profileSaved=U.now() end
+      if U.now()-profileSaved>30 then S.save('farm/data/performance',{since=performance.since,untilTime=U.now(),samples=performance.samples,expanded=performance.expanded,slowRoutes=performance.slowRoutes});profileSaved=U.now() end
       sleep(1)
     end
   end

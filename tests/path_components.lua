@@ -47,3 +47,23 @@ assert(not first and count==1000 and easy.components)
 local _,_,cached=P.find(easy,pos(-2,0,0),{pos(1,0,0)})
 assert(cached==0)
 print('PASS easy routes skip cold connectivity flood while expensive failures warm a reusable cache')
+local pocket=W.new(pos(0,0,0),16);local shell={}
+-- One-cell doorway is normally open, then temporarily occupied by a worker.
+for x=3,7 do for y=-2,2 do for z=-2,2 do
+  if (x==3 or x==7 or y==-2 or y==2 or z==-2 or z==2) and not (x==3 and y==0 and z==0) then
+    shell[#shell+1]={x=x,y=y,z=z,name='minecraft:stone'}
+  end
+end end end
+pocket:ingest(shell)
+local origin,destination=pos(0,0,0),pos(5,0,0)
+assert(#assert(P.find(pocket,origin,{destination}))==5)
+local rejected,why,cost=P.find(pocket,origin,{destination},{avoid={['3,0,0']=true}})
+assert(not rejected and why=='No route in surveyed space' and cost==1000)
+assert(not pocket.components,'A sealed small goal pocket must avoid a full static component flood')
+assert(#assert(P.find(pocket,origin,{destination}))==5,'Reverse traffic failure must not survive the blocker leaving')
+-- A second accessible destination prevents the sealed target from rejecting
+-- the entire request, even when that destination is on another elevation.
+local choices={destination,pos(-8,4,2)}
+local path=P.find(pocket,origin,choices,{avoid={['3,0,0']=true}})
+assert(path and #path==14 and P.valid(pocket,origin,path,{['3,0,0']=true}))
+print('PASS bounded reverse search rejects temporary sealed pockets without poisoning future or multi-goal routes')

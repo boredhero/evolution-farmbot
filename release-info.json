@@ -1,4 +1,4 @@
 {
-  "version": "0.5.1",
-  "notes": "Reuse surveyed connectivity across fleet routes and unchanged scans; reject disconnected goals before expensive searches. Includes responsive fleet networking, durable resume and inventory endurance."
+  "version": "0.5.2",
+  "notes": "Bounded reverse reachability checks reject sealed traffic pockets without exhaustive searches; persist slow-route diagnostics. Includes shared connectivity cache and responsive fleet scheduling."
 }
