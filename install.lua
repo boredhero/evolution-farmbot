@@ -786,6 +786,7 @@ local N=require('farm.lib.network')
 local Seeds=require('farm.lib.seeds')
 local Garden=require('farm.lib.garden')
 local Metrics=require('farm.lib.metrics')
+local Vines=require('farm.lib.vines')
 local Dashboard=require('farm.dashboard')
 local CommandHistory=require('farm.lib.command_history')
 local Players=require('farm.lib.players')
@@ -998,6 +999,12 @@ function Controller.run(cfg)
       if not path then return nil,goal end
       if not d.preview then w.route=path end
       return {path=path,goal=goal}
+    elseif m.kind=='cleared_vine' then
+      local l=d.job and leases[d.job.key]
+      local j=l and l.job
+      if not l or l.owner~=id or not Vines.allowed(j,d.block,{name='minecraft:vine'}) then return nil,'No matching vine-clearance assignment' end
+      world:observe(d.block,false);obstacles[U.key(d.block)]=nil;cache={};epoch=epoch+1
+      return {ok=true}
     elseif m.kind=='result' then
       local j=d.job
       local l=j and leases[j.key]
@@ -1041,7 +1048,8 @@ function Controller.run(cfg)
       for k,l in pairs(leases) do
         if l.untilTime<U.now() then leases[k]=nil;Batches.release(state.batches,l.owner)
         elseif l.owner==id then
-          local path,goal=route(id,d.pos,C.goals(l.job))
+          Vines.scan(l.job,world)
+          local path,goal=route(id,d.pos,Vines.goals(l.job))
           if path then w.route=path;return {job=l.job,path=path,goal=goal,token=l.token} end
           return {wait=10,reason='Assigned crop currently unreachable'}
         end
@@ -1079,7 +1087,8 @@ function Controller.run(cfg)
       options=Batches.order(state.batches,all,options,id)
       for i=1,math.min(12,#options) do
         local j=options[i].job
-        local path,goal=route(id,d.pos,C.goals(j))
+        Vines.scan(j,world)
+        local path,goal=route(id,d.pos,Vines.goals(j))
         if path then
           leaseSerial=leaseSerial+1
           local token=tostring(id)..':'..boot..':'..leaseSerial..':'..j.key
@@ -2228,7 +2237,7 @@ function G:scan(world,jobs,started,now,custom)
           and C.dirt(world:block(U.add(p.job.pos,U.dirs[6]))) then supported=true end
         if name=='computercraft:turtle_normal' or name=='computercraft:turtle_advanced' then
           -- A turtle can temporarily occupy a hole. It is not a user's replacement.
-        elseif not supported or name~='minecraft:air' or not p.debt then
+        elseif not supported or (name~='minecraft:air' and name~='minecraft:vine') or not p.debt then
           self.data.plots[k]=nil
         else p.intent=nil;p.updated=now end
       end
@@ -2297,6 +2306,8 @@ function G:finish(job,token,after,world,custom,now)
     if actual then self:observe(actual,now)
     elseif after.name==job.plantedName then
       p.live=true;p.debt=false
+    elseif after.name=='minecraft:vine' and p.debt then
+      p.live=false -- A dangling vine must not erase an unfinished replant.
     elseif after.name~='computercraft:turtle_normal' and after.name~='computercraft:turtle_advanced' then
       self.data.plots[job.key]=nil -- Adopt replacements; never remove them to restore an old plan.
     end
@@ -3045,6 +3056,32 @@ end
 function U.yield() sleep(0) end
 return U
 ]=],
+["farm/lib/vines.lua"] = [=[
+-- SPDX-License-Identifier: GPL-3.0-only
+-- Copyright (C) 2026 boredhero
+local U=require('farm.lib.util')
+local C=require('farm.lib.crops')
+local V={}
+function V.allowed(job,pos,block)
+  if not job or not pos or not block or block.name~='minecraft:vine' then return false end
+  local dy=pos.y-job.pos.y
+  return job.mode=='replant' and pos.x==job.pos.x and pos.z==job.pos.z
+    and dy<4 and (dy>=1 or (dy==0 and job.repair==true))
+end
+function V.scan(job,world)
+  local list={}
+  for dy=3,0,-1 do
+    local pos=U.add(job.pos,{x=0,y=dy,z=0})
+    if V.allowed(job,pos,world:block(pos)) then list[#list+1]=pos end
+  end
+  job.vines=list;return list
+end
+function V.goals(job)
+  local target=job.vines and job.vines[1]
+  return C.goals(target and {pos=target} or job)
+end
+return V
+]=],
 ["farm/lib/world.lua"] = [=[
 -- SPDX-License-Identifier: GPL-3.0-only
 -- Copyright (C) 2026 boredhero
@@ -3403,6 +3440,7 @@ local Crafting=require('farm.lib.crafting')
 local Compost=require('farm.lib.compost')
 local Pickup=require('farm.lib.pickup')
 local Soil=require('farm.lib.soil')
+local Vines=require('farm.lib.vines')
 local Worker={}
 function Worker.inventory()
   local counts={}
@@ -3536,6 +3574,17 @@ function Worker.run(cfg)
     end
     checkpoint();return true
   end
+  local function clearVine(job,target)
+    local block,side=inspect(target)
+    if not Vines.allowed(job,target,block) then return true end
+    if cfg.dryRun then return false,'Inspection mode preserves vines' end
+    local ok,why=turtle['dig'..side]()
+    if not ok then return false,'Vine at '..U.key(target)..': '..tostring(why) end
+    if inspect(target) then return false,'Vine clearance not verified at '..U.key(target) end
+    local recorded,reason=rpc('cleared_vine',{job=job,block=target})
+    if not recorded then return false,reason end
+    return true
+  end
   local function navigate(goals,homing,initialPath,column)
     local lastError,lastObstacle
     for attempt=1,8 do
@@ -3558,6 +3607,10 @@ function Worker.run(cfg)
         local ok,reason,obstacle=follow(route.path,homing)
         if ok then return true end
         if reason=='paused' then return false,reason end
+        if column and obstacle and Vines.allowed(column,obstacle.pos,{name=obstacle.name}) and not cfg.dryRun then
+          local cleared,why=clearVine(column,obstacle.pos)
+          if not cleared then return false,why end
+        end
         if column and column.mode=='cane' and obstacle and obstacle.name==column.name
           and obstacle.pos.x==column.pos.x and obstacle.pos.z==column.pos.z and obstacle.pos.y>column.pos.y then
           column.pos=U.copy(obstacle.pos);goals=C.goals(column)
@@ -3937,7 +3990,7 @@ function Worker.run(cfg)
             sleep(5)
           else
           if restocked then
-            local reroute=rpc('route',{goals=C.goals(job)})
+            local reroute=rpc('route',{goals=Vines.goals(job)})
             if reroute then reply.path=reroute.path;reply.goal=reroute.goal else reply.path=nil end
           end
           -- Budget a proven return path, rather than Manhattan distance through walls.
@@ -3948,7 +4001,14 @@ function Worker.run(cfg)
             if not home then status=tostring(homeError);sleep(5) end
           else
             status=(cfg.dryRun and 'Inspecting ' or 'Farming ')..job.name
-            local reached,why=navigate(C.goals(job),false,reply.path,job)
+            local reached,why=navigate(Vines.goals(job),false,reply.path,job)
+            if reached and job.vines and #job.vines>0 then
+              for _,target in ipairs(job.vines) do
+                if reached then reached,why=navigate(C.goals({pos=target}),false,nil,job) end
+                if reached then reached,why=clearVine(job,target) end
+              end
+              if reached then reached,why=navigate(C.goals(job),false,nil,job) end
+            end
             if reached then
               local outcome,detail,blockState=harvest(job,reply.token)
               local after
@@ -3992,7 +4052,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.4.2\", \"ref\": \"v0.4.2\"}\
+["farm/version.json"] = "{\"version\": \"0.4.3\", \"ref\": \"v0.4.3\"}\
 ",
 }
 local args={...}

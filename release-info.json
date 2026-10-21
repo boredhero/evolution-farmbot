@@ -1,4 +1,4 @@
 {
-  "version": "0.4.2",
-  "notes": "Recover failed replants using carried hoes on tagged dirt, verify farmland before retrying, retain hoes during unloading and preserve soil-repair debts."
+  "version": "0.4.3",
+  "notes": "Clear ordinary hanging vines up to three blocks above known crops and preserve vine-invaded replant gaps; never clear crop vines or vines during inspection-only runs."
 }

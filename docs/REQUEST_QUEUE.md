@@ -28,7 +28,9 @@ Append requests in conversation order. Keep superseded requests and verify deplo
 | 22 | Sugar cane growing into its approach cell must retarget and replan above new top | Deployed; full test suite passes |
 | 23 | Lifetime system and individual worker statistics with clickable stats page | Deployed to controller 4 and workers 8/9; full suite passes; both workers recorded in durable stats |
 | 24 | Hoe recovery for known farmland crops on tagged dirt; report crop cell and soil separately | Deployed to 4/8/9/21; full suite and file verification pass; actual tilling awaits carried hoe and suitable gap |
-| 25 | Periodically clear ordinary hanging vines a few blocks above known crop spots, including empty planting gaps | In progress |
+| 25 | Periodically clear ordinary hanging vines a few blocks above known crop spots, including empty planting gaps | Deployed to controller and workers 8/9/10/21; full suite passes |
+| 26 | Fleet traffic-aware routes, transient turtle blockage recovery and waiting/replanning | In progress |
+| 27 | Investigate ComputerCraft responsiveness and identify measured controller/scheduler bottlenecks | Read-only diagnostics in progress |
 
 Deployment 2026-10-20 22:27 verified active controller/worker, shared chest coordinates, one Crafter at 1789,65,3796, six blooming aloe plots and thirteen blueberry bushes.
 

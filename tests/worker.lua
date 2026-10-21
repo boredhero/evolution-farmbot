@@ -118,6 +118,7 @@ local function run(options)
         if options.noReplan and data.goals[1].x==1 and not data.preview then return nil,'No accessible approach cell' end
         return {path=path(data.pos,data.goals[1]),goal=data.goals[1]}
       end
+      if kind=='cleared_vine' then events[#events+1]='cleared_vine';return {ok=true} end
       if kind=='blocked' then events[#events+1]='blocked';return {ok=true} end
       if kind=='recover' then events[#events+1]='recover';return {ok=true} end
       if kind=='begin' then
@@ -129,7 +130,7 @@ local function run(options)
         if options.mode and not modeSent then modeSent=true;return {mode=options.mode} end
         if options.mode then eq(data.dryRun,options.mode=='dry') end
         nextJob=nextJob+1;local j=options.jobs[nextJob];if not j then error(stop) end
-        j=clone(j);local goal=U.add(j.pos,U.dirs[5])
+        j=clone(j);local goal=U.add(j.vines and j.vines[1] or j.pos,U.dirs[5])
         if options.soil then grid[U.key(U.add(j.pos,U.dirs[6]))]={name=options.soil} end
         if not j.repair then grid[j.key]={name=j.name,state={age=7}} end
         if options.blockRoute then grid['1,1,0']={name='minecraft:stone'} end
@@ -137,7 +138,7 @@ local function run(options)
       end
       if kind=='result' then
         if options.loseResult then return nil,'simulated controller disconnection' end
-        results[#results+1]=clone(data);return {ok=true}
+        results[#results+1]=clone(data);if options.stopAfterResult then error(stop) end;return {ok=true}
       end
       if kind=='release' then return {ok=true} end
       error('Unexpected RPC: '..kind)
@@ -256,4 +257,15 @@ do
   local missing=run({jobs={crop(2)},soil='minecraft:dirt',inventory={[1]={name='minecraft:wheat_seeds',count=3}}})
   eq(missing.results[1].outcome,'error');assert(missing.results[1].detail:find('soil at 2,-1,0: minecraft:dirt',1,true))
   print('PASS worker retains hoe, checks dirt beneath empty crop, tills and replants; missing hoe reports both coordinates')
+end
+
+do
+  local j=crop(2,true);j.vines={{x=2,y=3,z=0},{x=2,y=2,z=0},{x=2,y=1,z=0},{x=2,y=0,z=0}}
+  local grid={};for _,p in ipairs(j.vines) do grid[U.key(p)]={name='minecraft:vine'} end
+  local r=run({jobs={j},grid=grid,inventory={[1]={name='minecraft:wheat_seeds',count=3}}})
+  eq(r.results[1].outcome,'replanted');eq(r.grid['2,0,0'].name,'minecraft:wheat')
+  for y=1,3 do assert(not r.grid['2,'..y..',0']) end
+  local dry=run({jobs={j},grid=grid,dryRun=true,stopAfterResult=true,inventory={[1]={name='minecraft:wheat_seeds',count=3}}})
+  for _,event in ipairs(dry.events) do assert(not event:find('dig:',1,true)) end
+  print('PASS worker clears bounded hanging vines top-down, repairs invaded gap and preserves all vines in dry mode')
 end

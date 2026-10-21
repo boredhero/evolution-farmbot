@@ -33,7 +33,7 @@ function G:scan(world,jobs,started,now,custom)
           and C.dirt(world:block(U.add(p.job.pos,U.dirs[6]))) then supported=true end
         if name=='computercraft:turtle_normal' or name=='computercraft:turtle_advanced' then
           -- A turtle can temporarily occupy a hole. It is not a user's replacement.
-        elseif not supported or name~='minecraft:air' or not p.debt then
+        elseif not supported or (name~='minecraft:air' and name~='minecraft:vine') or not p.debt then
           self.data.plots[k]=nil
         else p.intent=nil;p.updated=now end
       end
@@ -102,6 +102,8 @@ function G:finish(job,token,after,world,custom,now)
     if actual then self:observe(actual,now)
     elseif after.name==job.plantedName then
       p.live=true;p.debt=false
+    elseif after.name=='minecraft:vine' and p.debt then
+      p.live=false -- A dangling vine must not erase an unfinished replant.
     elseif after.name~='computercraft:turtle_normal' and after.name~='computercraft:turtle_advanced' then
       self.data.plots[job.key]=nil -- Adopt replacements; never remove them to restore an old plan.
     end

@@ -9,6 +9,7 @@ local Crafting=require('farm.lib.crafting')
 local Compost=require('farm.lib.compost')
 local Pickup=require('farm.lib.pickup')
 local Soil=require('farm.lib.soil')
+local Vines=require('farm.lib.vines')
 local Worker={}
 function Worker.inventory()
   local counts={}
@@ -142,6 +143,17 @@ function Worker.run(cfg)
     end
     checkpoint();return true
   end
+  local function clearVine(job,target)
+    local block,side=inspect(target)
+    if not Vines.allowed(job,target,block) then return true end
+    if cfg.dryRun then return false,'Inspection mode preserves vines' end
+    local ok,why=turtle['dig'..side]()
+    if not ok then return false,'Vine at '..U.key(target)..': '..tostring(why) end
+    if inspect(target) then return false,'Vine clearance not verified at '..U.key(target) end
+    local recorded,reason=rpc('cleared_vine',{job=job,block=target})
+    if not recorded then return false,reason end
+    return true
+  end
   local function navigate(goals,homing,initialPath,column)
     local lastError,lastObstacle
     for attempt=1,8 do
@@ -164,6 +176,10 @@ function Worker.run(cfg)
         local ok,reason,obstacle=follow(route.path,homing)
         if ok then return true end
         if reason=='paused' then return false,reason end
+        if column and obstacle and Vines.allowed(column,obstacle.pos,{name=obstacle.name}) and not cfg.dryRun then
+          local cleared,why=clearVine(column,obstacle.pos)
+          if not cleared then return false,why end
+        end
         if column and column.mode=='cane' and obstacle and obstacle.name==column.name
           and obstacle.pos.x==column.pos.x and obstacle.pos.z==column.pos.z and obstacle.pos.y>column.pos.y then
           column.pos=U.copy(obstacle.pos);goals=C.goals(column)
@@ -543,7 +559,7 @@ function Worker.run(cfg)
             sleep(5)
           else
           if restocked then
-            local reroute=rpc('route',{goals=C.goals(job)})
+            local reroute=rpc('route',{goals=Vines.goals(job)})
             if reroute then reply.path=reroute.path;reply.goal=reroute.goal else reply.path=nil end
           end
           -- Budget a proven return path, rather than Manhattan distance through walls.
@@ -554,7 +570,14 @@ function Worker.run(cfg)
             if not home then status=tostring(homeError);sleep(5) end
           else
             status=(cfg.dryRun and 'Inspecting ' or 'Farming ')..job.name
-            local reached,why=navigate(C.goals(job),false,reply.path,job)
+            local reached,why=navigate(Vines.goals(job),false,reply.path,job)
+            if reached and job.vines and #job.vines>0 then
+              for _,target in ipairs(job.vines) do
+                if reached then reached,why=navigate(C.goals({pos=target}),false,nil,job) end
+                if reached then reached,why=clearVine(job,target) end
+              end
+              if reached then reached,why=navigate(C.goals(job),false,nil,job) end
+            end
             if reached then
               local outcome,detail,blockState=harvest(job,reply.token)
               local after

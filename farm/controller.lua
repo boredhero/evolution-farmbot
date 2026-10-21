@@ -9,6 +9,7 @@ local N=require('farm.lib.network')
 local Seeds=require('farm.lib.seeds')
 local Garden=require('farm.lib.garden')
 local Metrics=require('farm.lib.metrics')
+local Vines=require('farm.lib.vines')
 local Dashboard=require('farm.dashboard')
 local CommandHistory=require('farm.lib.command_history')
 local Players=require('farm.lib.players')
@@ -221,6 +222,12 @@ function Controller.run(cfg)
       if not path then return nil,goal end
       if not d.preview then w.route=path end
       return {path=path,goal=goal}
+    elseif m.kind=='cleared_vine' then
+      local l=d.job and leases[d.job.key]
+      local j=l and l.job
+      if not l or l.owner~=id or not Vines.allowed(j,d.block,{name='minecraft:vine'}) then return nil,'No matching vine-clearance assignment' end
+      world:observe(d.block,false);obstacles[U.key(d.block)]=nil;cache={};epoch=epoch+1
+      return {ok=true}
     elseif m.kind=='result' then
       local j=d.job
       local l=j and leases[j.key]
@@ -264,7 +271,8 @@ function Controller.run(cfg)
       for k,l in pairs(leases) do
         if l.untilTime<U.now() then leases[k]=nil;Batches.release(state.batches,l.owner)
         elseif l.owner==id then
-          local path,goal=route(id,d.pos,C.goals(l.job))
+          Vines.scan(l.job,world)
+          local path,goal=route(id,d.pos,Vines.goals(l.job))
           if path then w.route=path;return {job=l.job,path=path,goal=goal,token=l.token} end
           return {wait=10,reason='Assigned crop currently unreachable'}
         end
@@ -302,7 +310,8 @@ function Controller.run(cfg)
       options=Batches.order(state.batches,all,options,id)
       for i=1,math.min(12,#options) do
         local j=options[i].job
-        local path,goal=route(id,d.pos,C.goals(j))
+        Vines.scan(j,world)
+        local path,goal=route(id,d.pos,Vines.goals(j))
         if path then
           leaseSerial=leaseSerial+1
           local token=tostring(id)..':'..boot..':'..leaseSerial..':'..j.key
