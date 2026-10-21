@@ -8,6 +8,7 @@ local SeedRecipes=require('farm.lib.seed_recipes')
 local Crafting=require('farm.lib.crafting')
 local Compost=require('farm.lib.compost')
 local Pickup=require('farm.lib.pickup')
+local Soil=require('farm.lib.soil')
 local Worker={}
 function Worker.inventory()
   local counts={}
@@ -272,7 +273,9 @@ function Worker.run(cfg)
       local item=turtle.getItemDetail(slot)
       if item then
         turtle.select(slot)
-        if plan.seeds[item.name] then
+        if Soil.isHoe(turtle.getItemDetail(slot,true)) then
+          -- Keep carried recovery tools; never export them as stray harvest drops.
+        elseif plan.seeds[item.name] then
           -- Batch supplies plus essential replant items; export unrelated reserves.
           local limit=plan.keep and (plan.keep[item.name] or 0) or 4
           if limit>0 and not kept[item.name] and (plan.keep or types<8) then kept[item.name]=0;types=types+1 end
@@ -366,13 +369,35 @@ function Worker.run(cfg)
       if saved.crafting then return false,reason end
     end
     if not slot then return false,'deferred' end
-    turtle.select(slot)
-    local ok,err=turtle['place'..side]()
-    if not ok then return false,'Replant failed: '..tostring(err) end
-    local planted=inspect(job.pos)
-    if not planted or (planted.name~=job.name and planted.name~=job.plantedName) then
-      return false,'Replant verification at '..U.key(job.pos)..': expected '..tostring(job.plantedName or job.name)..', found '..(planted and planted.name or 'air')
+    local function plant()
+      if inspect(job.pos) then return false,'New occupant preserved' end
+      slot=getSlot(job.seed);if not slot then return false,'No planting item after recovery' end
+      turtle.select(slot)
+      local ok,err=turtle['place'..side]()
+      local planted=inspect(job.pos)
+      if planted and (planted.name==job.name or planted.name==job.plantedName) then return true end
+      return false,'Replant verification at '..U.key(job.pos)..': expected '..tostring(job.plantedName or job.name)
+        ..', found '..(planted and planted.name or 'air')..(not ok and ' ('..tostring(err)..')' or '')
     end
+    local ok,err=plant()
+    if not ok and C.needsFarmland(job,cfg.customCrops) then
+      local function probe()
+        if inspect(job.pos) then return nil,'Crop cell occupied; soil left unchanged' end
+        local origin=U.copy(pos)
+        local reached,why=follow({job.pos},true)
+        if not reached then return nil,'Cannot inspect soil: '..tostring(why) end
+        local found,soil=turtle.inspectDown()
+        local returned,reason=follow({origin},true)
+        if not returned then error('Cannot return from soil inspection: '..tostring(reason),0) end
+        return found and soil or nil
+      end
+      local restored,why=Soil.recover(job,cfg.customCrops,probe,function()
+        if inspect(job.pos) then return false,'Crop cell is now occupied' end
+        return turtle['place'..side]()
+      end)
+      if restored then ok,err=plant() else err=err..'; '..tostring(why) end
+    end
+    if not ok then return false,err end
     return true
   end
   local function harvest(job,token)

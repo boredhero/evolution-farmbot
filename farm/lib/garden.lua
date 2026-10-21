@@ -29,6 +29,8 @@ function G:scan(world,jobs,started,now,custom)
       else
         local name=world:name(p.job.pos)
         local supported=C.candidate(world,{name=p.job.name,x=p.job.pos.x,y=p.job.pos.y,z=p.job.pos.z},custom)
+        if not supported and p.debt and C.needsFarmland(p.job,custom)
+          and C.dirt(world:block(U.add(p.job.pos,U.dirs[6]))) then supported=true end
         if name=='computercraft:turtle_normal' or name=='computercraft:turtle_advanced' then
           -- A turtle can temporarily occupy a hole. It is not a user's replacement.
         elseif not supported or name~='minecraft:air' or not p.debt then

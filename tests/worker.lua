@@ -58,6 +58,12 @@ local function run(options)
     end
     turtle['place'..side]=function()
       local k=U.key(target(side));assert(not grid[k],'Tried to replace occupied crop cell!')
+      local below=U.key(U.add(target(side),U.dirs[6]))
+      if options.soil and inv[selected] and inv[selected].name=='minecraft:wooden_hoe' then
+        assert(grid[below] and grid[below].name=='minecraft:dirt')
+        grid[below]={name='minecraft:farmland'};events[#events+1]='till:'..below;return true
+      end
+      if options.soil and grid[below] and grid[below].name~='minecraft:farmland' then return false,'Invalid soil' end
       assert(inv[selected] and inv[selected].name=='minecraft:wheat_seeds')
       inv[selected].count=inv[selected].count-1;if inv[selected].count==0 then inv[selected]=nil end
       grid[k]={name='minecraft:wheat',state={age=0}};events[#events+1]='plant:'..k;return true
@@ -124,6 +130,7 @@ local function run(options)
         if options.mode then eq(data.dryRun,options.mode=='dry') end
         nextJob=nextJob+1;local j=options.jobs[nextJob];if not j then error(stop) end
         j=clone(j);local goal=U.add(j.pos,U.dirs[5])
+        if options.soil then grid[U.key(U.add(j.pos,U.dirs[6]))]={name=options.soil} end
         if not j.repair then grid[j.key]={name=j.name,state={age=7}} end
         if options.blockRoute then grid['1,1,0']={name='minecraft:stone'} end
         return {job=j,goal=goal,path=path(data.pos,goal),token='t'..nextJob}
@@ -241,3 +248,12 @@ for _,t in ipairs(tests) do
   print('PASS '..t[1])
 end
 print('Passed '..#tests..' worker integration simulations')
+
+do
+  local r=run({jobs={crop(2)},soil='minecraft:dirt',inventory={[1]={name='minecraft:wheat_seeds',count=3},[2]={name='minecraft:wooden_hoe',count=1}}})
+  eq(r.results[1].outcome,'harvested');eq(r.grid['2,-1,0'].name,'minecraft:farmland');eq(r.grid['2,0,0'].name,'minecraft:wheat')
+  assert(r.inventory[2] and r.inventory[2].name=='minecraft:wooden_hoe','Hoe must survive initial unloading')
+  local missing=run({jobs={crop(2)},soil='minecraft:dirt',inventory={[1]={name='minecraft:wheat_seeds',count=3}}})
+  eq(missing.results[1].outcome,'error');assert(missing.results[1].detail:find('soil at 2,-1,0: minecraft:dirt',1,true))
+  print('PASS worker retains hoe, checks dirt beneath empty crop, tills and replants; missing hoe reports both coordinates')
+end

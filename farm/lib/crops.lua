@@ -80,6 +80,10 @@ function C.family(name)
     ['minecraft:torchflower_crop']='minecraft:torchflower'}
   return aliases[name] or name
 end
+function C.needsFarmland(job,custom)
+  local rule=C.rule(job.name,custom)
+  return job.seed~=nil and job.mode=='replant' and rule~=nil and not rule.support
+end
 function C.candidate(world,b,custom)
   local pos={x=b.x,y=b.y,z=b.z};local below=U.add(pos,U.dirs[6])
   local rule=C.rule(b.name,custom)

@@ -1,4 +1,4 @@
 {
-  "version": "0.4.1",
-  "notes": "Clickable lifetime statistics with persistent per-worker harvests, replants, inspections and travel; retains existing farm totals and offline worker history."
+  "version": "0.4.2",
+  "notes": "Recover failed replants using carried hoes on tagged dirt, verify farmland before retrying, retain hoes during unloading and preserve soil-repair debts."
 }
