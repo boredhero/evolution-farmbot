@@ -803,6 +803,7 @@ local SeedRecipes=require('farm.lib.seed_recipes')
 local Compost=require('farm.lib.compost')
 local Compacting=require('farm.lib.compacting')
 local Growth=require('farm.lib.growth')
+local GrowthTools=require('farm.lib.growth_tools')
 local Controller={}
 function Controller.run(cfg)
   U.openModem()
@@ -811,6 +812,7 @@ function Controller.run(cfg)
   local journal=Journal.new('farm/data/controller',state)
   state.settings=state.settings or {};state.settings.compacting=state.settings.compacting or {}
   state.settings.routeCacheLimit=RouteCache.limit(state.settings)
+  GrowthTools.defaults(state.settings)
   state.history=state.history or {};state.excluded=state.excluded or {}
   state.batches=state.batches or {};state.growth=state.growth or {}
   if state.batches.schema~=2 then state.batches={schema=2} end
@@ -952,6 +954,7 @@ function Controller.run(cfg)
         end
       end
       for item in pairs(ingredients) do seeds[item]=true;keep[item]=math.max(keep[item] or 0,1) end
+      GrowthTools.reserves(state.settings,seeds,keep)
       local compost=Compost.plan(garden,state.batches,leases,w.inventory or {},keep,stock)
       return {seeds=seeds,needed=needed,keep=keep,compost=compost,compacting=Compacting.plan(state.settings.compacting,w.inventory or {},keep,needed)}
     elseif m.kind=='bank_store' then
@@ -1018,7 +1021,7 @@ function Controller.run(cfg)
       for key,lock in pairs(craftLocks) do if lock.owner==id then craftLocks[key]=nil end end
       return {ok=true}
     elseif m.kind=='control' then
-      return {recover=cfg.workerRecover and cfg.workerRecover[tostring(id)]}
+      return {recover=cfg.workerRecover and cfg.workerRecover[tostring(id)],growthTools={autoWorms=state.settings.autoWorms,autoBoneMeal=state.settings.autoBoneMeal}}
     elseif m.kind=='step' then return Traffic.claim(workers,id,d.pos,d.target,U.now())
     elseif m.kind=='status' then return summary()
     elseif m.kind=='blocked' then
@@ -1359,6 +1362,7 @@ local Growth=require('farm.lib.growth')
 local F=require('farm.lib.frame')
 local Compacting=require('farm.lib.compacting')
 local RouteCache=require('farm.lib.route_cache')
+local GrowthTools=require('farm.lib.growth_tools')
 local D={};D.__index=D
 function D.installedVersion()
   if not fs or not textutils then return 'unversioned' end
@@ -1449,19 +1453,25 @@ function D:render(m,v,w,h)
   local function bar(y) f:fill(1,y,w,1,' ','0','b');return 3 end
   if v.settings then
     local recipes=Compacting.recipes
-    v.setting=math.max(1,math.min(#recipes+1,v.setting or 1))
-    local selected=recipes[v.setting];local enabled=m.settings and m.settings.compacting or {}
+    v.setting=math.max(1,math.min(#recipes+1+#GrowthTools.options,v.setting or 1))
+    local selected=recipes[v.setting];local tool=GrowthTools.options[v.setting-#recipes-1];local enabled=m.settings and m.settings.compacting or {}
     f:write(2,1,'FARMBOT / SETTINGS','0','b')
     f:write(2,2,'Fleet-wide settings','0','b')
     local rows=math.max(1,hh-9);local first=math.max(1,v.setting-rows+1)
-    for i=first,math.min(#recipes+1,first+rows-1) do
+    for i=first,math.min(#recipes+1+#GrowthTools.options,first+rows-1) do
       local r=recipes[i];local label=r and ((enabled[r.key] and 'ON  ' or 'OFF ')..r.label) or ('Route cache: '..RouteCache.limit(m.settings)..' routes')
+      local option=GrowthTools.options[i-#recipes-1]
+      if option then label=((m.settings and m.settings[option.key]) and 'ON  ' or 'OFF ')..option.label end
       f:write(3,4+i-first,(i==v.setting and '> ' or '  ')..label,i==v.setting and '5' or '0')
     end
     if selected then
     f:write(3,hh-4,'Nine surplus items -> one block/crate','3')
     f:write(3,hh-3,'Planting stock is kept. Uses a Crafter.','8')
     f:write(3,hh-2,'Enable all nine slots; keep output clear.','8')
+    elseif tool then
+      f:write(3,hh-4,tool.key=='autoWorms' and 'Try fresh harvest gaps; keep up to16 worms.' or 'Use carried bone meal in the current round.','3')
+      f:write(3,hh-3,tool.key=='autoWorms' and 'Up to6 different plots/minute; retry later.' or 'Up to4 uses/plant; stop if growth stalls.','8')
+      f:write(3,hh-2,'No item use in dry mode. Saved fleet-wide.','8')
     else
       f:write(3,hh-4,'Keep '..RouteCache.limit(m.settings)..' routes | cached '..count(m.cache),'3')
       f:write(3,hh-3,'32  64  128  256  512  1024','8')
@@ -1469,6 +1479,7 @@ function D:render(m,v,w,h)
     end
     local x=bar(h-1);x=button(f,hits,x,h-1,'[PREV]','setting',-1);x=button(f,hits,x,h-1,'[NEXT]','setting',1)
     if selected then button(f,hits,x,h-1,enabled[selected.key] and '[TURN OFF]' or '[TURN ON]','compact',selected.key)
+    elseif tool then button(f,hits,x,h-1,(m.settings and m.settings[tool.key]) and '[TURN OFF]' or '[TURN ON]','growthTool',tool.key)
     else x=button(f,hits,x,h-1,'[<]','routeLimit',-1);button(f,hits,x,h-1,'[>]','routeLimit',1) end
     x=bar(h);x=button(f,hits,x,h,'[MAP]','view','map');button(f,hits,x,h,'[LIVE]','view','stats')
     return f,hits
@@ -1725,7 +1736,9 @@ function D:touch(name,x,y,m)
     if x>=hit.x and x<hit.x+hit.w and y>=hit.y and y<hit.y+hit.h then
       local action=hit.action
       if action=='select' then v.selected=hit.value
-      elseif action=='setting' then v.setting=((v.setting or 1)-1+hit.value)%(#Compacting.recipes+1)+1
+      elseif action=='setting' then v.setting=((v.setting or 1)-1+hit.value)%(#Compacting.recipes+1+#GrowthTools.options)+1
+      elseif action=='growthTool' then
+        m.settings=m.settings or {};m.settings[hit.value]=not m.settings[hit.value]
       elseif action=='routeLimit' then
         m.settings=m.settings or {};RouteCache.adjust(m.settings,hit.value)
       elseif action=='compact' then
@@ -2606,6 +2619,62 @@ function G.estimate(models,job,h,now)
   return math.max(0,remaining),model.samples
 end
 return G
+]=],
+["farm/lib/growth_tools.lua"] = [=[
+-- SPDX-License-Identifier: GPL-3.0-only
+-- Copyright (C) 2026 boredhero
+local C=require('farm.lib.crops')
+local U=require('farm.lib.util')
+local T={}
+T.options={{key='autoWorms',label='Auto-place worms'},{key='autoBoneMeal',label='Use bone meal on current crop'}}
+function T.defaults(settings)
+  for _,o in ipairs(T.options) do if settings[o.key]==nil then settings[o.key]=true end end
+end
+function T.reserves(settings,seeds,keep)
+  if settings.autoWorms then seeds['actuallyadditions:worm']=true;keep['actuallyadditions:worm']=16 end
+  if settings.autoBoneMeal then seeds['minecraft:bone_meal']=true;keep['minecraft:bone_meal']=64 end
+end
+local function slot(name)
+  for i=1,16 do local d=turtle.getItemDetail(i);if d and d.name==name and d.count>0 then return i end end
+end
+function T.worm(job,side,state,now,save)
+  local i=slot('actuallyadditions:worm');if not i then return false end
+  local key=U.key(job.pos);state.attempts=state.attempts or {}
+  if now-(state.attempts[key] or -math.huge)<600 then return false end
+  if now-(state.window or -math.huge)>=60 then state.window=now;state.used=0 end
+  if (state.used or 0)>=6 then return false end
+  state.used=(state.used or 0)+1;state.attempts[key]=now
+  local n,oldest,when=0
+  for k,t in pairs(state.attempts) do n=n+1;if not when or t<when then oldest,when=k,t end end
+  if n>128 then state.attempts[oldest]=nil end
+  save() -- A restart must not create an unbounded retry loop.
+  turtle.select(i);local before=turtle.getItemCount(i)
+  turtle['place'..side]()
+  local placed=turtle.getItemCount(i)==before-1
+  if placed then state.placed=(state.placed or 0)+1;save() end
+  return placed
+end
+function T.boneMeal(job,block,side,inspect)
+  local used=0
+  for _=1,4 do
+    local ready,reason=C.ready(job,block)
+    if ready or reason~='growing' or not block or block.name~=job.name then break end
+    local i=slot('minecraft:bone_meal');if not i then break end
+    turtle.select(i);local before=turtle.getItemCount(i)
+    turtle['place'..side]()
+    local consumed=before-turtle.getItemCount(i)
+    local after=inspect()
+    if consumed==1 then used=used+1 end
+    local progressed=after and after.name~=block.name
+    if after and after.state and block.state then
+      progressed=progressed or after.state.age~=block.state.age or after.state.berries~=block.state.berries or after.state.half~=block.state.half
+    end
+    block=after
+    if consumed~=1 or not progressed then break end
+  end
+  return block,used
+end
+return T
 ]=],
 ["farm/lib/hardware.lua"] = [=[
 -- SPDX-License-Identifier: GPL-3.0-only
@@ -3978,6 +4047,7 @@ local Soil=require('farm.lib.soil')
 local Vines=require('farm.lib.vines')
 local Traffic=require('farm.lib.traffic')
 local Fuel=require('farm.lib.fuel')
+local GrowthTools=require('farm.lib.growth_tools')
 local Worker={}
 function Worker.inventory()
   local counts={}
@@ -4048,7 +4118,8 @@ function Worker.run(cfg)
   saved.stats=saved.stats or {steps=0}
   Worker.refuel()
   local pos,heading=Worker.calibrate()
-  local status='Starting';local active=false
+  local status='Starting';local active=false;local growthTools={}
+  saved.worms=saved.worms or {}
   local pickupCells=saved.pickupCells or {};saved.pickupCells=pickupCells
   local pickupBatch=saved.pickupBatch
   local function checkpoint() saved.pos=pos;saved.heading=heading;saved.fuel=turtle.getFuelLevel();saved.status=status;S.save('farm/data/worker',saved) end
@@ -4374,6 +4445,9 @@ function Worker.run(cfg)
       -- Any occupant wins over a remembered gap, including the user's new crop.
       return false,'occupied'
     end
+    if growthTools.autoWorms and not cfg.dryRun and C.needsFarmland(job,cfg.customCrops) then
+      GrowthTools.worm(job,side,saved.worms,U.now(),checkpoint)
+    end
     local slot=getSlot(job.seed)
     if not slot then
       turtle['suck'..side]()
@@ -4445,6 +4519,11 @@ function Worker.run(cfg)
       return 'error',reason
     end
     local ready,reason=C.ready(job,block)
+    if not ready and reason=='growing' and growthTools.autoBoneMeal and not cfg.dryRun then
+      local used;block,used=GrowthTools.boneMeal(job,block,side,function() return inspect(job.pos) end)
+      if used>0 then saved.boneMealUsed=(saved.boneMealUsed or 0)+used;checkpoint() end
+      ready,reason=C.ready(job,block)
+    end
     if not ready then return reason,nil,block and block.state end
     if job.mode=='cocoa' then
       local names={'north','east','south','west'}
@@ -4570,6 +4649,7 @@ function Worker.run(cfg)
       end
       Worker.compact()
       local control=rpc('control')
+      if control and control.growthTools then growthTools=control.growthTools end
       if control and control.recover and control.recover~=cfg.recoverAck then
         pos,heading=Worker.calibrate();checkpoint()
         cfg.recoverAck=control.recover;S.save('farm/config',cfg)
@@ -4668,7 +4748,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.6.2\", \"ref\": \"v0.6.2\"}\
+["farm/version.json"] = "{\"version\": \"0.6.3\", \"ref\": \"v0.6.3\"}\
 ",
 }
 local args={...}

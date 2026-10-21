@@ -166,3 +166,14 @@ for _,size in ipairs({{51,19},{164,81}}) do
  assert(contains(frame,m.settings.compacting.melon and 'ON  Melon' or 'OFF Melon'))
 end
 print('PASS fleet compacting settings use bottom-row controls, persist through the shared model and fit normal computer and large monitor sizes')
+
+for index,key in pairs({[10]='autoWorms',[11]='autoBoneMeal'}) do
+ local view={settings=true,setting=index};m.settings={[key]=true}
+ local _,hits=d:render(m,view,51,19);d.views.growth=view;d.hits.growth=hits
+ local toggled=false
+ for _,hit in ipairs(hits) do if hit.action=='growthTool' then
+  assert(hit.value==key and hit.y==18);assert(d:touch('growth',hit.x,hit.y,m));assert(m.settings[key]==false);toggled=true
+ end end
+ assert(toggled)
+end
+print('PASS independent worm and bone-meal settings toggle from reachable bottom-row controls')

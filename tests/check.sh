@@ -11,6 +11,7 @@ lua tests/crafting.lua
 lua tests/compacting.lua
 lua tests/compost.lua
 lua tests/growth.lua
+lua tests/growth_tools.lua
 lua tests/packing.lua
 lua tests/pickup.lua
 lua tests/worker.lua

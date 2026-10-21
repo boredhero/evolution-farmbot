@@ -26,6 +26,7 @@ local SeedRecipes=require('farm.lib.seed_recipes')
 local Compost=require('farm.lib.compost')
 local Compacting=require('farm.lib.compacting')
 local Growth=require('farm.lib.growth')
+local GrowthTools=require('farm.lib.growth_tools')
 local Controller={}
 function Controller.run(cfg)
   U.openModem()
@@ -34,6 +35,7 @@ function Controller.run(cfg)
   local journal=Journal.new('farm/data/controller',state)
   state.settings=state.settings or {};state.settings.compacting=state.settings.compacting or {}
   state.settings.routeCacheLimit=RouteCache.limit(state.settings)
+  GrowthTools.defaults(state.settings)
   state.history=state.history or {};state.excluded=state.excluded or {}
   state.batches=state.batches or {};state.growth=state.growth or {}
   if state.batches.schema~=2 then state.batches={schema=2} end
@@ -175,6 +177,7 @@ function Controller.run(cfg)
         end
       end
       for item in pairs(ingredients) do seeds[item]=true;keep[item]=math.max(keep[item] or 0,1) end
+      GrowthTools.reserves(state.settings,seeds,keep)
       local compost=Compost.plan(garden,state.batches,leases,w.inventory or {},keep,stock)
       return {seeds=seeds,needed=needed,keep=keep,compost=compost,compacting=Compacting.plan(state.settings.compacting,w.inventory or {},keep,needed)}
     elseif m.kind=='bank_store' then
@@ -241,7 +244,7 @@ function Controller.run(cfg)
       for key,lock in pairs(craftLocks) do if lock.owner==id then craftLocks[key]=nil end end
       return {ok=true}
     elseif m.kind=='control' then
-      return {recover=cfg.workerRecover and cfg.workerRecover[tostring(id)]}
+      return {recover=cfg.workerRecover and cfg.workerRecover[tostring(id)],growthTools={autoWorms=state.settings.autoWorms,autoBoneMeal=state.settings.autoBoneMeal}}
     elseif m.kind=='step' then return Traffic.claim(workers,id,d.pos,d.target,U.now())
     elseif m.kind=='status' then return summary()
     elseif m.kind=='blocked' then

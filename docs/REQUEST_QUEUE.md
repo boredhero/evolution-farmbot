@@ -57,3 +57,7 @@ Follow-up evidence after v0.5.3 deployment: live routes to shared docks can stil
 35. Route cache capacity in Settings: default512, arrows choose32/64/128/256/512/1024; decreasing capacity immediately trims least-recently-used entries. Deployed v0.6.2 to 4/8/9/10/21; full suite and public/runtime hash verification pass; active controller saved capacity512.
 
 36. Screenshot replant error at1780,81,3787: live correct certus crop and farmland confirmed, debt cleared; accept delayed correct replant observations before soil recovery and preserve unexpected occupants. Deployed v0.6.2; delayed-visibility and replacement-preservation simulations pass.
+
+37. Place carried Actually Additions worms on farm soil, trying other plots on refusal: bounded saved attempts in freshly harvested planting gaps, retain16.
+38. Use compost-produced/carried bone meal for the current assigned crop: up to4 uses with observed growth checks, retain64.
+39. Separate fleet Settings toggles for both growth tools, default on; preserve explicit off and dry mode. v0.6.3 tests/deployment in progress.

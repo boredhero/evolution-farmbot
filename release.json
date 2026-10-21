@@ -1,15 +1,15 @@
 {
   "schema": 1,
-  "version": "0.6.2",
-  "ref": "v0.6.2",
-  "notes": "Settings menu route-cache arrows select 32,64,128,256,512 or 1024 routes; default512 with immediate least-recently-used eviction when lowering capacity. Recheck delayed replants before soil recovery.",
+  "version": "0.6.3",
+  "ref": "v0.6.3",
+  "notes": "Separate fleet toggles for automatic worm placement and current-crop bone meal; bounded attempts, planting-gap safety, retained supplies and dry-mode protection.",
   "files": [
     {"path": "LICENSE", "size": 35149, "adler32": "f70779ec"},
     {"path": "NOTICE", "size": 691, "adler32": "ad64ed8d"},
     {"path": "check.lua", "size": 184, "adler32": "6d4c3c97"},
     {"path": "farm.lua", "size": 3655, "adler32": "2fd6da24"},
-    {"path": "farm/controller.lua", "size": 30793, "adler32": "0a8beaff"},
-    {"path": "farm/dashboard.lua", "size": 23511, "adler32": "443e207a"},
+    {"path": "farm/controller.lua", "size": 31027, "adler32": "67b34337"},
+    {"path": "farm/dashboard.lua", "size": 24480, "adler32": "6915688f"},
     {"path": "farm/lib/batches.lua", "size": 3841, "adler32": "51ff3c31"},
     {"path": "farm/lib/checksum.lua", "size": 369, "adler32": "68cb76fa"},
     {"path": "farm/lib/command_history.lua", "size": 933, "adler32": "161638a1"},
@@ -23,6 +23,7 @@
     {"path": "farm/lib/fuel.lua", "size": 1528, "adler32": "1eecfdfb"},
     {"path": "farm/lib/garden.lua", "size": 5909, "adler32": "6ff4d2c1"},
     {"path": "farm/lib/growth.lua", "size": 1703, "adler32": "6ad14fd9"},
+    {"path": "farm/lib/growth_tools.lua", "size": 2482, "adler32": "61a15c29"},
     {"path": "farm/lib/hardware.lua", "size": 3671, "adler32": "4b08e961"},
     {"path": "farm/lib/help.lua", "size": 6194, "adler32": "beaf3a9a"},
     {"path": "farm/lib/journal.lua", "size": 2325, "adler32": "173c1e52"},
@@ -44,7 +45,7 @@
     {"path": "farm/lib/world.lua", "size": 4929, "adler32": "7d2e7d87"},
     {"path": "farm/setup.lua", "size": 5760, "adler32": "d9249f38"},
     {"path": "farm/updater.lua", "size": 8484, "adler32": "75871ef3"},
-    {"path": "farm/worker.lua", "size": 33199, "adler32": "1264a1a1"},
+    {"path": "farm/worker.lua", "size": 33881, "adler32": "5e939017"},
     {"path": "startup.lua", "size": 351, "adler32": "e5a976c1"},
     {"path": "update.lua", "size": 197, "adler32": "b1644169"}
   ]

@@ -13,6 +13,7 @@ local Soil=require('farm.lib.soil')
 local Vines=require('farm.lib.vines')
 local Traffic=require('farm.lib.traffic')
 local Fuel=require('farm.lib.fuel')
+local GrowthTools=require('farm.lib.growth_tools')
 local Worker={}
 function Worker.inventory()
   local counts={}
@@ -83,7 +84,8 @@ function Worker.run(cfg)
   saved.stats=saved.stats or {steps=0}
   Worker.refuel()
   local pos,heading=Worker.calibrate()
-  local status='Starting';local active=false
+  local status='Starting';local active=false;local growthTools={}
+  saved.worms=saved.worms or {}
   local pickupCells=saved.pickupCells or {};saved.pickupCells=pickupCells
   local pickupBatch=saved.pickupBatch
   local function checkpoint() saved.pos=pos;saved.heading=heading;saved.fuel=turtle.getFuelLevel();saved.status=status;S.save('farm/data/worker',saved) end
@@ -409,6 +411,9 @@ function Worker.run(cfg)
       -- Any occupant wins over a remembered gap, including the user's new crop.
       return false,'occupied'
     end
+    if growthTools.autoWorms and not cfg.dryRun and C.needsFarmland(job,cfg.customCrops) then
+      GrowthTools.worm(job,side,saved.worms,U.now(),checkpoint)
+    end
     local slot=getSlot(job.seed)
     if not slot then
       turtle['suck'..side]()
@@ -480,6 +485,11 @@ function Worker.run(cfg)
       return 'error',reason
     end
     local ready,reason=C.ready(job,block)
+    if not ready and reason=='growing' and growthTools.autoBoneMeal and not cfg.dryRun then
+      local used;block,used=GrowthTools.boneMeal(job,block,side,function() return inspect(job.pos) end)
+      if used>0 then saved.boneMealUsed=(saved.boneMealUsed or 0)+used;checkpoint() end
+      ready,reason=C.ready(job,block)
+    end
     if not ready then return reason,nil,block and block.state end
     if job.mode=='cocoa' then
       local names={'north','east','south','west'}
@@ -605,6 +615,7 @@ function Worker.run(cfg)
       end
       Worker.compact()
       local control=rpc('control')
+      if control and control.growthTools then growthTools=control.growthTools end
       if control and control.recover and control.recover~=cfg.recoverAck then
         pos,heading=Worker.calibrate();checkpoint()
         cfg.recoverAck=control.recover;S.save('farm/config',cfg)

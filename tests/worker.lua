@@ -64,7 +64,19 @@ local function run(options)
       return true
     end
     turtle['place'..side]=function()
-      local k=U.key(target(side));assert(not grid[k],'Tried to replace occupied crop cell!')
+      local k=U.key(target(side))
+      if inv[selected] and inv[selected].name=='minecraft:bone_meal' then
+        events[#events+1]='bonemeal:'..k
+        if not options.rejectBoneMeal then
+          inv[selected].count=inv[selected].count-1;grid[k].state.age=math.min(7,grid[k].state.age+3)
+        end
+        return not options.rejectBoneMeal
+      end
+      if inv[selected] and inv[selected].name=='actuallyadditions:worm' then
+        assert(not grid[k]);events[#events+1]='worm:'..k
+        inv[selected].count=inv[selected].count-1;return true
+      end
+      assert(not grid[k],'Tried to replace occupied crop cell!')
       local below=U.key(U.add(target(side),U.dirs[6]))
       if options.soil and inv[selected] and inv[selected].name=='minecraft:wooden_hoe' then
         assert(grid[below] and grid[below].name=='minecraft:dirt')
@@ -134,7 +146,7 @@ local function run(options)
       if kind=='craft_station' and options.compact then return {pos={x=3,y=1,z=1}} end
       if kind=='craft_station' then return nil,'No available Crafter in scanner coverage' end
       if kind=='step' then return {ok=true} end
-      if kind=='control' then return options.recover and {recover=1} or {} end
+      if kind=='control' then return {recover=options.recover and 1 or nil,growthTools=options.growthTools} end
       if kind=='hello' then return {active=true} end
       if kind=='seed_plan' then seedPlans=seedPlans+1;if options.stopAfterDock and seedPlans==3 then error(stop) end;return options.seedPlan or {seeds={['minecraft:wheat_seeds']=true},needed={}} end
       if kind=='status' then return {active=not options.paused} end
@@ -158,7 +170,7 @@ local function run(options)
         if j.wait then return {wait=0,reason='Waiting for next crop',returnHome=j.returnHome} end
         j=clone(j);local goal=U.add(j.vines and j.vines[1] or j.pos,U.dirs[5])
         if options.soil then grid[U.key(U.add(j.pos,U.dirs[6]))]={name=options.soil} end
-        if not j.repair then grid[j.key]={name=j.name,state={age=7}} end
+        if not j.repair then grid[j.key]={name=j.name,state={age=options.immature and 1 or 7}} end
         if options.blockRoute then grid['1,1,0']={name='minecraft:stone'} end
         return {job=j,goal=goal,path=path(data.pos,goal),token='t'..nextJob}
       end
@@ -352,4 +364,18 @@ do
  opts.latePlant=nil;opts.lateForeign=true
  local foreign=run(opts);eq(foreign.results[1].outcome,'occupied');eq(foreign.grid['2,0,0'].name,'farmersdelight:onions')
  print('PASS delayed replant visibility is accepted before soil recovery; unexpected occupants are preserved without a false soil error')
+end
+
+do
+ local opts={jobs={crop(2)},saved={commissioned=true},immature=true,growthTools={autoWorms=true,autoBoneMeal=true},
+ inventory={[1]={name='minecraft:wheat_seeds',count=4},[2]={name='minecraft:bone_meal',count=10},[3]={name='actuallyadditions:worm',count=2}}}
+ local r=run(opts);eq(r.results[1].outcome,'harvested');eq(r.inventory[2].count,8);eq(r.inventory[3].count,1)
+ local events=table.concat(r.events,'|');assert(events:find('bonemeal:2,0,0',1,true)<events:find('dig:2,0,0',1,true))
+ assert(events:find('worm:2,0,0',1,true)<events:find('plant:2,0,0',1,true))
+ opts.growthTools={autoWorms=false,autoBoneMeal=false};local off=run(opts)
+ eq(off.results[1].outcome,'growing');eq(off.inventory[2].count,10);eq(off.inventory[3].count,2)
+ opts.growthTools={autoWorms=true,autoBoneMeal=true};opts.dryRun=true;local dry=run(opts)
+ eq(dry.inventory[2].count,10);eq(dry.inventory[3].count,2)
+ opts.dryRun=false;opts.rejectBoneMeal=true;local rejected=run(opts);eq(rejected.results[1].outcome,'growing');eq(rejected.inventory[2].count,10)
+ print('PASS actual worker accelerates its assigned crop, places a worm in the harvest gap before replanting, respects both toggles and dry mode, and continues on rejected bone meal')
 end

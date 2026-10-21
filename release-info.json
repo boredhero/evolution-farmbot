@@ -1,4 +1,4 @@
 {
-  "version": "0.6.2",
-  "notes": "Settings menu route-cache arrows select 32,64,128,256,512 or 1024 routes; default512 with immediate least-recently-used eviction when lowering capacity. Recheck delayed replants before soil recovery."
+  "version": "0.6.3",
+  "notes": "Separate fleet toggles for automatic worm placement and current-crop bone meal; bounded attempts, planting-gap safety, retained supplies and dry-mode protection."
 }
