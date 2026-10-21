@@ -33,7 +33,7 @@ Append requests in conversation order. Keep superseded requests and verify deplo
 | 27 | Investigate ComputerCraft responsiveness and identify measured controller/scheduler bottlenecks | Implemented and profiled: small writes 2-5ms; mailbox, indexed paths, event yields; two Lua threads active after restart; connectivity cache follow-up in v0.5.1 |
 | 28 | Keep working across crop rounds until one empty inventory slot remains; avoid unnecessary dock trips | Deployed v0.5.0; server restarted and four workers resumed |
 | 29 | Longer fuel endurance and useful carried backup coal | Deployed v0.5.0; server restarted and four workers resumed |
-| 30 | Reach crops under torches without removing decorations | Neighbor harvest access with durable replant obligations; testing and deployment in progress |
+| 30 | Reach crops under torches without removing decorations | Deployed v0.5.3 to 4/8/9/10/21; public installer and files verified; controller/worker simulations pass; live under-torch harvest not yet observed |
 
 Deployment 2026-10-20 22:27 verified active controller/worker, shared chest coordinates, one Crafter at 1789,65,3796, six blooming aloe plots and thirteen blueberry bushes.
 
@@ -44,3 +44,5 @@ Final runtime deployment: 2026-10-20 23:01, backup `/home/noah/minecraft/farmbot
 Requests 26-29 also include durable assignment resume across restarts, removal of temporary no-work/route-failure docking, one-second RPC retry and half-second movement retry. Final release must be pushed and deployed before restarting the server.
 
 2026-10-21 verification: v0.5.0 published and deployed before Minecraft restart; service resumed with computer_threads=2. Four workers resumed in the farm. v0.5.1 public installer and deployed file hashes verified. First minute: job assignment max28ms, movement permission max1ms, mutation journal max6ms; startup route max1103ms, routes in the second 30-second sample averaged18ms. Sixteen-worker simulations pass; live fleet has four workers.
+
+Follow-up evidence after v0.5.3 deployment: live routes to shared docks can still hit the 60,000-node limit twice (soft/hard traffic), taking roughly 3 seconds. Fast movement replies remain responsive. Keep this routing follow-up open; the earlier short sample did not cover these crowded-dock cases.
