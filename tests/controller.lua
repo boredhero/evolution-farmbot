@@ -1,8 +1,12 @@
 -- SPDX-License-Identifier: GPL-3.0-only
 -- Copyright (C) 2026 boredhero
 package.path='./?.lua;'..package.path
+os.queueEvent=function() end
+os.pullEvent=function() coroutine.yield() end
 local S=require('farm.lib.store')
 local Controller=require('farm.controller')
+local Journal=require('farm.lib.journal')
+fs={exists=function() return false end}
 local function clone(v) if type(v)~='table' then return v end;local t={};for k,x in pairs(v) do t[k]=clone(x) end;return t end
 local function eq(a,b) assert(a==b,tostring(a)..' ~= '..tostring(b)) end
 local stop={};local state;local responses={};local queue={};local mutations=0
@@ -24,7 +28,9 @@ S.load=function(path,default)
   return default
 end
 S.save=function(path,data)
-  if path=='farm/data/controller' then
+  if path:find('controller-journal/',1,true) then
+    Journal.apply(state,clone(data));if data.plot and data.plot.intent then mutations=mutations+1 end
+  elseif path=='farm/data/controller' then
     state=clone(data)
     for _,p in pairs(data.garden.plots) do if p.intent then mutations=mutations+1;break end end
   end
@@ -39,14 +45,15 @@ enqueue('hello',{dock=dock,pos=dock,inventory={}})
 local lastRequest
 rednet={open=function() end,
   receive=function()
-    if #queue==0 then error(stop) end
+    coroutine.yield()
+    while #queue==0 do if #responses>=6 then error(stop) end;coroutine.yield() end
     lastRequest=table.remove(queue,1);return 1,lastRequest
   end,
   send=function(id,reply)
     eq(id,1);assert(not reply.error,reply.error);responses[#responses+1]=clone(reply)
-    if lastRequest.kind=='hello' then enqueue('job',{pos=dock,inventory={}})
+    if lastRequest.kind=='hello' then enqueue('job',{pos=dock,inventory={},resume='2,1,0'})
     elseif lastRequest.kind=='job' and not assigned then
-      assigned=reply.data;assert(assigned.job)
+      assigned=reply.data;assert(assigned.job);eq(assigned.job.key,'2,1,0')
       enqueue('begin',{job=assigned.job,token=assigned.token,pos=assigned.goal,inventory={}})
       -- Duplicate RPC must not mutate the ledger twice.
       enqueue('begin',{job=assigned.job,token=assigned.token,pos=assigned.goal,inventory={}},seq)
@@ -63,10 +70,14 @@ rednet={open=function() end,
       eq(reply.data.job.key,assigned.job.key)
     end
   end}
-parallel={waitForAny=function(network,discover,scan)
+parallel={waitForAny=function(network,discover,scan,display,player,console,touch,stopLoop,request)
   local c=coroutine.create(scan);local ok,err=coroutine.resume(c);assert(ok,err)
   assert(state and state.garden.plots['1,1,0'],'Initial scan not persisted')
-  network()
+  local receiver,processor=coroutine.create(network),coroutine.create(request)
+  for _=1,40 do for _,co in ipairs({receiver,processor}) do
+    local ok,err=coroutine.resume(co);if not ok then error(err,0) end
+  end end
+  error('Mailbox did not complete controller scenario')
 end}
 local ok,err=pcall(Controller.run,{center={x=0,y=0,z=0},radius=5,scanInterval=120,
   group='test',allowed={['1']=true},customCrops={}})

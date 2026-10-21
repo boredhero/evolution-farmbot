@@ -27,5 +27,10 @@ function U.openModem()
   end
   error('Attach an Ender Modem to this computer/turtle.',0)
 end
-function U.yield() sleep(0) end
+local yieldSerial=0
+function U.yield()
+  yieldSerial=yieldSerial+1;local token=yieldSerial
+  os.queueEvent('farmbot_yield',token)
+  repeat local _,seen=os.pullEvent('farmbot_yield') until seen==token
+end
 return U

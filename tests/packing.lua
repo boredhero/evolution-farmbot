@@ -8,7 +8,7 @@ local slots={
   [3]={name='wheat',count=10},[4]={name='minecraft:coal',count=12},
   [5]={name='seed',count=64},[6]={name='seed',count=3},
   [7]={name='special',count=1,variant=1},[8]={name='special',count=1,variant=2}}
-turtle={getItemDetail=function(i) return slots[i] end,
+turtle={getFuelLevel=function() return fuel end,getItemDetail=function(i) return slots[i] end,
   getItemCount=function(i) return slots[i] and slots[i].count or 0 end,
   getItemSpace=function(i) return 64-(slots[i] and slots[i].count or 0) end,
   select=function(i) selected=i end,

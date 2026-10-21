@@ -1,8 +1,11 @@
 -- SPDX-License-Identifier: GPL-3.0-only
 -- Copyright (C) 2026 boredhero
 package.path='./?.lua;'..package.path
+os.queueEvent=function() end
+os.pullEvent=function() coroutine.yield() end
 local S=require('farm.lib.store')
 local Controller=require('farm.controller')
+fs={exists=function() return false end}
 local function eq(a,b) assert(a==b,tostring(a)..' ~= '..tostring(b)) end
 local realPrint=print
 local function run(command,busy,cancel)
@@ -31,8 +34,8 @@ local function run(command,busy,cancel)
       assert(not reply.error,reply.error)
       if current.kind=='job' then job=reply.data;assert(job.job) end
     end}
-  parallel={waitForAny=function(network,discover,scan,display,player,console,touch,stop)
-    local loops={coroutine.create(scan),coroutine.create(network),coroutine.create(console),coroutine.create(stop)}
+  parallel={waitForAny=function(network,discover,scan,display,player,console,touch,stop,request)
+    local loops={coroutine.create(scan),coroutine.create(network),coroutine.create(request),coroutine.create(console),coroutine.create(stop)}
     for t=1,10 do
       tick=t
       if not busy then if tick==1 then input[1]=command end

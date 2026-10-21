@@ -27,28 +27,47 @@ local function pop(h)
 end
 function P.find(world,start,goals,opts)
   opts=opts or {}
-  if not world:inside(start) then return nil,'Start outside scanner coverage' end
-  local targets,valid={},{}
-  local function blocked(p)
-    return world:blocked(p) or (opts.avoid and opts.avoid[U.key(p)])
+  if not world:inside(start) then return nil,'Start outside scanner coverage',0 end
+  local n=world.n;local plane=n*n;local floor,abs=math.floor,math.abs
+  local masks={1,2,4,8,16,32,64,128};local avoid={}
+  -- Convert traffic once, rather than allocating six positions and string keys
+  -- for every expanded voxel. Only reconstruct positions for the final route.
+  for key,value in pairs(opts.avoid or {}) do if value then
+    local x,y,z=key:match('^([^,]+),([^,]+),([^,]+)$')
+    x,y,z=tonumber(x),tonumber(y),tonumber(z)
+    if x and y and z then
+      local id=world:index({x=x,y=y,z=z});if id then avoid[id]=true end
+    end
+  end end
+  local function blocked(id)
+    return avoid[id] or floor(world.packed:byte(floor(id/8)+1)/masks[id%8+1])%2==1
   end
+  local source=world:index(start);local targets,valid={},{}
   for _,g in ipairs(goals) do
-    if world:inside(g) and (U.equal(g,start) or not blocked(g)) then
-      targets[world:index(g)]=g; valid[#valid+1]=g
+    local id=world:index(g)
+    if id and (id==source or not blocked(id)) then
+      targets[id]=g;valid[#valid+1]={x=g.x-world.min.x,y=g.y-world.min.y,z=g.z-world.min.z}
     end
   end
-  if #valid==0 then return nil,'No accessible approach cell' end
-  local function heuristic(p)
+  if #valid==0 then return nil,'No accessible approach cell',0 end
+  local function heuristic(x,y,z)
     local best=math.huge
-    for _,g in ipairs(valid) do best=math.min(best,U.distance(p,g)) end
+    for i=1,#valid do local g=valid[i];local distance=abs(x-g.x)+abs(y-g.y)+abs(z-g.z)
+      if distance<best then best=distance end
+    end
     return best
   end
-  local source=world:index(start)
   local heap,dist,parents={}, {[source]=0},{}
-  push(heap,{id=source,g=0,f=heuristic(start)})
-  local expanded=0
+  push(heap,{id=source,g=0,f=heuristic(start.x-world.min.x,start.y-world.min.y,start.z-world.min.z)})
+  local expanded=0;local current,score
+  local function visit(id,x,y,z)
+    if (not dist[id] or score<dist[id]) and not blocked(id) then
+      dist[id]=score;parents[id]=current.id
+      push(heap,{id=id,g=score,f=score+heuristic(x,y,z)})
+    end
+  end
   while #heap>0 do
-    local current=pop(heap)
+    current=pop(heap)
     if current.g==dist[current.id] then
       if targets[current.id] then
         local path,at={},current.id
@@ -58,23 +77,21 @@ function P.find(world,start,goals,opts)
         return ordered,targets[current.id],expanded
       end
       expanded=expanded+1
-      if expanded>(opts.limit or 60000) then return nil,'Search budget reached' end
+      if expanded>(opts.limit or 60000) then return nil,'Search budget reached',expanded end
       if opts.yieldFn and expanded%1000==0 then opts.yieldFn() end
-      local pos=world:position(current.id)
-      for _,d in ipairs(U.dirs) do
-        local nextPos=U.add(pos,d);local id=world:index(nextPos)
-        if id and not blocked(nextPos) then
-          local score=current.g+1
-          if not dist[id] or score<dist[id] then
-            dist[id]=score;parents[id]=current.id
-            push(heap,{id=id,g=score,f=score+heuristic(nextPos)})
-          end
-        end
-      end
+      local id=current.id;local x=id%n;local z=floor(id/n)%n;local y=floor(id/plane)
+      score=current.g+1
+      if z>0 then visit(id-n,x,y,z-1) end
+      if x<n-1 then visit(id+1,x+1,y,z) end
+      if z<n-1 then visit(id+n,x,y,z+1) end
+      if x>0 then visit(id-1,x-1,y,z) end
+      if y<n-1 then visit(id+plane,x,y+1,z) end
+      if y>0 then visit(id-plane,x,y-1,z) end
     end
   end
-  return nil,'No route in surveyed space'
+  return nil,'No route in surveyed space',expanded
 end
+
 function P.valid(world,start,path,avoid)
   local prev=start
   for _,p in ipairs(path) do

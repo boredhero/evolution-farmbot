@@ -29,11 +29,15 @@ Append requests in conversation order. Keep superseded requests and verify deplo
 | 23 | Lifetime system and individual worker statistics with clickable stats page | Deployed to controller 4 and workers 8/9; full suite passes; both workers recorded in durable stats |
 | 24 | Hoe recovery for known farmland crops on tagged dirt; report crop cell and soil separately | Deployed to 4/8/9/21; full suite and file verification pass; actual tilling awaits carried hoe and suitable gap |
 | 25 | Periodically clear ordinary hanging vines a few blocks above known crop spots, including empty planting gaps | Deployed to controller and workers 8/9/10/21; full suite passes |
-| 26 | Fleet traffic-aware routes, transient turtle blockage recovery and waiting/replanning | In progress |
-| 27 | Investigate ComputerCraft responsiveness and identify measured controller/scheduler bottlenecks | Read-only diagnostics in progress |
+| 26 | Fleet traffic-aware routes, transient turtle blockage recovery and waiting/replanning | Implemented; full suite passes; final deployment and restart verification pending |
+| 27 | Investigate ComputerCraft responsiveness and identify measured controller/scheduler bottlenecks | Implemented and profiled: small writes 2-5ms; mailbox, indexed paths, event yields; two-thread config prepared for restart |
+| 28 | Keep working across crop rounds until one empty inventory slot remains; avoid unnecessary dock trips | Implemented; full suite passes; final deployment and restart verification pending |
+| 29 | Longer fuel endurance and useful carried backup coal | Implemented; full suite passes; final deployment and restart verification pending |
 
 Deployment 2026-10-20 22:27 verified active controller/worker, shared chest coordinates, one Crafter at 1789,65,3796, six blooming aloe plots and thirteen blueberry bushes.
 
 Deployment 2026-10-20 22:38: composting, persistent observation symbols and learned estimates installed on computers 4 and 9; composter interaction tag loaded. Backup: `/home/noah/minecraft/farmbot-backups/crop-crafting-map-20261020-223704`. Reloads must be announced in advance.
 
-Final runtime deployment: 2026-10-20 23:01, backup `/home/noah/minecraft/farmbot-backups/exclusive-crop-rounds-20261020-230120`. Controller active, cycle 1 / round 1 owned exclusively by worker 9 (wheat), 19 checked plants at verification. Live canola-to-seed conversion previously verified. Lifetime statistics are the next pending implementation request.
+Final runtime deployment: 2026-10-20 23:01, backup `/home/noah/minecraft/farmbot-backups/exclusive-crop-rounds-20261020-230120`. Controller active, cycle 1 / round 1 owned exclusively by worker 9 (wheat), 19 checked plants at verification. Live canola-to-seed conversion previously verified. Subsequent work is tracked in the numbered queue above.
+
+Requests 26-29 also include durable assignment resume across restarts, removal of temporary no-work/route-failure docking, one-second RPC retry and half-second movement retry. Final release must be pushed and deployed before restarting the server.

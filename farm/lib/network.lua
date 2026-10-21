@@ -47,7 +47,7 @@ function N.client(cfg)
     local message={v=1,seq=seq,kind=kind,data=data or {},session=cfg.session}
     for attempt=1,4 do
       rednet.send(cfg.controller,message,N.protocol(cfg))
-      local deadline=U.now()+12
+      local deadline=U.now()+(kind=='step' and 0.5 or 1)
       repeat
         local id,reply=rednet.receive(N.protocol(cfg),math.max(0,deadline-U.now()))
         if id==cfg.controller and type(reply)=='table' and reply.seq==seq and reply.session==cfg.session then
@@ -56,7 +56,8 @@ function N.client(cfg)
         end
       until U.now()>=deadline
     end
-    local ok,found=pcall(N.discover,2)
+    if kind=='step' then return nil,'Controller did not answer movement permission within 2 seconds' end
+    local ok,found=pcall(N.discover,1)
     return nil,'Controller not responding. '..((ok and N.mismatch(cfg,found)) or
       'Check the controller is running farm start and both have Ender Modems.')
   end

@@ -10,6 +10,10 @@ local Seeds=require('farm.lib.seeds')
 local Garden=require('farm.lib.garden')
 local Metrics=require('farm.lib.metrics')
 local Vines=require('farm.lib.vines')
+local Performance=require('farm.lib.performance')
+local Journal=require('farm.lib.journal')
+local Traffic=require('farm.lib.traffic')
+local Mailbox=require('farm.lib.mailbox')
 local Dashboard=require('farm.dashboard')
 local CommandHistory=require('farm.lib.command_history')
 local Players=require('farm.lib.players')
@@ -24,6 +28,7 @@ function Controller.run(cfg)
   U.openModem()
   local protocol=N.protocol(cfg)
   local state=S.load('farm/data/controller',{active=false,history={},excluded={}})
+  local journal=Journal.new('farm/data/controller',state)
   state.history=state.history or {};state.excluded=state.excluded or {}
   state.batches=state.batches or {};state.growth=state.growth or {}
   if state.batches.schema~=2 then state.batches={schema=2} end
@@ -41,8 +46,7 @@ function Controller.run(cfg)
   local jobs,workers,leases,obstacles,responses,cache={},{},{},{},{},{}
   local craftLocks={}
   local function hasCrafter()
-    for _,b in pairs(world.blocks) do if b.name=='minecraft:crafter' then return true end end
-    return false
+    return state.crafters and #state.crafters>0
   end
   local function plantingInventory(inventory)
     local out={};for item,count in pairs(inventory or {}) do out[item]=count end
@@ -63,12 +67,17 @@ function Controller.run(cfg)
   assert(scanner,'Attach the Geo Scanner directly to the controller.')
   local scan=scanner.scanBlocks or scanner.scan
   assert(type(scan)=='function','Geo Scanner has no supported scan method.')
+  local performance=Performance.new();local profileSaved=U.now()
   local function save()
+    local started=U.now()
     metrics:tick(U.now())
     -- Prune long-absent plants so abandoned crops do not fill the disk.
     local cutoff=U.now()-7*86400
     for k,h in pairs(state.history) do if (h.seen or 0)<cutoff then state.history[k]=nil end end
-    S.save('farm/data/controller',state);lastSave=U.now()
+    journal:checkpoint();lastSave=U.now();performance:record('save',started)
+  end
+  local function persist(job)
+    local started=U.now();metrics:tick(U.now());journal:record(job);performance:record('journal',started)
   end
   local function summary()
     local total,unknown,active=0,0,0
@@ -78,34 +87,40 @@ function Controller.run(cfg)
       scanAge=lastScan>0 and math.floor(U.now()-lastScan) or -1,error=scanError,
       cachedHits=hits,epoch=epoch,center=cfg.center,radius=cfg.radius,debts=garden:debts()}
   end
-  local function avoidFor(id)
-    local avoid={};local now=U.now()
+  local function avoidFor(id,planned)
+    local now=U.now();local avoid=Traffic.avoid(workers,id,now,planned)
     for k,untilTime in pairs(obstacles) do
       if untilTime>now then avoid[k]=true else obstacles[k]=nil end
-    end
-    for other,w in pairs(workers) do
-      if other~=id then
-        if now-w.seen<30 and w.pos then avoid[U.key(w.pos)]=true end
-        if w.dock then avoid[U.key(w.dock)]=true end
-      end
     end
     return avoid
   end
   local function route(id,start,goals)
-    local avoid=avoidFor(id)
+    local started=U.now()
+    local avoid=avoidFor(id,true)
     local parts={U.key(start)};for _,g in ipairs(goals) do parts[#parts+1]=U.key(g) end
     local key=table.concat(parts,'|')
     local cached=cache[key]
-    if cached and P.valid(world,start,cached.path,avoid) then hits=hits+1;return cached.path,cached.goal end
-    local path,goal=P.find(world,start,goals,{avoid=avoid,yieldFn=U.yield})
+    if cached and P.valid(world,start,cached.path,avoid) then hits=hits+1;cached.used=U.now();performance:record('route_cached',started);return cached.path,cached.goal end
+    local path,goal,expanded=P.find(world,start,goals,{avoid=avoid,yieldFn=U.yield})
+    if not path then
+      local relaxed=avoidFor(id,false);local changed=false
+      for k in pairs(avoid) do if not relaxed[k] then changed=true;break end end
+      if changed then
+        local extra;path,goal,extra=P.find(world,start,goals,{avoid=relaxed,yieldFn=U.yield});expanded=(expanded or 0)+(extra or 0)
+      end
+    end
+    performance.expanded=(performance.expanded or 0)+(expanded or 0)
     if path then
       if #parts>0 then
         local count=0;for _ in pairs(cache) do count=count+1 end
-        if count>=128 then cache={} end
+        if count>=128 and not cache[key] then
+          local oldest,used;for k,r in pairs(cache) do if not used or (r.used or 0)<used then oldest,used=k,r.used or 0 end end
+          if oldest then cache[oldest]=nil end
+        end
       end
-      cache[key]={path=path,goal=goal};return path,goal
+      cache[key]={path=path,goal=goal,used=U.now()};performance:record('route',started);return path,goal
     end
-    return nil,goal
+    performance:record('route_failed',started);return nil,goal
   end
   local function fresh() return lastScan>0 and U.now()-lastScan<cfg.scanInterval*3 end
   local function release(id)
@@ -117,7 +132,7 @@ function Controller.run(cfg)
     workers[id]=workers[id] or {}
     local w=workers[id];w.seen=U.now()
     metrics:report(id,d.stats,U.now())
-    if d.pos and not d.preview then w.pos=d.pos end
+    if d.pos and not d.preview then Traffic.update(w,d.pos,U.now()) end
     if d.fuel then w.fuel=d.fuel end
     if d.status then w.status=tostring(d.status):sub(1,120) end
     if d.inventory then w.inventory=d.inventory end
@@ -137,9 +152,9 @@ function Controller.run(cfg)
       end
       return {active=state.active,center=cfg.center,radius=cfg.radius}
     elseif m.kind=='seed_plan' then
-      local stock=Seeds.stock(cfg.seedSource);local needed={}
+      local stock=Seeds.stock(cfg.seedSource);local needed={};local living,debts=garden:counts()
       for seed in pairs(garden.data.seeds) do
-        local target=math.max(16,math.min(64,garden:living(seed)+garden:debts(seed)*2))
+        local target=math.max(16,math.min(64,(living[seed] or 0)+(debts[seed] or 0)*2))
         needed[seed]=math.max(0,target-(stock[seed] or 0))
       end
       local batch=state.batches.workers and state.batches.workers[tostring(id)]
@@ -164,7 +179,7 @@ function Controller.run(cfg)
     elseif m.kind=='recover' then
       local p=d.job and garden.data.plots[d.job.key]
       if p and p.version==d.job.version and p.intent and p.intent.owner==id then
-        p.intent=nil;p.updated=U.now();save()
+        p.intent=nil;p.updated=U.now();persist(d.job)
       end
       release(id);scanAt=0
       return {ok=true} -- Existing durable debt survives; never resurrect an obsolete crop plan.
@@ -173,7 +188,7 @@ function Controller.run(cfg)
       local l=d.job and leases[d.job.key]
       if not l or l.owner~=id or l.token~=d.token then return nil,'Crop assignment is no longer valid' end
       local answer,why=garden:begin(l.job,id,l.token,(d.inventory[l.job.seed] or 0)>0,U.now())
-      if answer then save() end -- Write-ahead debt must reach disk BEFORE authorizing a dig.
+      if answer then persist(l.job) end -- Write-ahead debt must reach disk BEFORE authorizing a dig.
       return answer,why
     elseif m.kind=='seed' then
       if not w.dock or not U.equal(d.pos,w.dock) then return nil,'Seed delivery requires the worker at its dock' end
@@ -209,18 +224,20 @@ function Controller.run(cfg)
       return {ok=true}
     elseif m.kind=='control' then
       return {recover=cfg.workerRecover and cfg.workerRecover[tostring(id)]}
+    elseif m.kind=='step' then return Traffic.claim(workers,id,d.pos,d.target,U.now())
     elseif m.kind=='status' then return summary()
     elseif m.kind=='blocked' then
       if d.block and world:inside(d.block) then
-        obstacles[U.key(d.block)]=U.now()+20
-        if d.name then world:observe(d.block,{name=d.name});cache={};epoch=epoch+1;scanAt=0 end
+        local moving=Traffic.turtle(d.name)
+        obstacles[U.key(d.block)]=U.now()+(moving and 1 or 20);w.nextPos=nil
+        if d.name then world:observe(d.block,{name=d.name});cache={};epoch=epoch+1;if not moving then scanAt=0 end end
       end
       return {ok=true}
     elseif m.kind=='route' then
       if not fresh() then return nil,'Waiting for a fresh scanner map' end
       local path,goal=route(id,d.pos,d.goals or {})
       if not path then return nil,goal end
-      if not d.preview then w.route=path end
+      if not d.preview then w.route=path;w.routeStart=U.copy(d.pos) end
       return {path=path,goal=goal}
     elseif m.kind=='cleared_vine' then
       local l=d.job and leases[d.job.key]
@@ -238,7 +255,7 @@ function Controller.run(cfg)
         if d.outcome=='harvested' and j.mode=='cane' and j.rootY then
           for y=j.rootY+1,j.pos.y do world:observe({x=j.pos.x,y=y,z=j.pos.z},false) end
         end
-        cache={};epoch=epoch+1
+        epoch=epoch+1 -- Cached routes are checked against current occupancy before reuse.
       end
       garden:finish(j,d.token,d.after,world,cfg.customCrops,U.now())
       local h=state.history[j.key] or {interval=60}
@@ -257,7 +274,7 @@ function Controller.run(cfg)
       elseif j.repair then h.due=U.now()+5 end
       if d.outcome=='changed' then jobs[j.key]=nil end
       if d.outcome=='harvested' and (j.mode=='fruit' or j.mode=='cane' or j.mode=='rice' or j.mode=='upper') then jobs[j.key]=nil end
-      save();return {ok=true}
+      persist(j);return {ok=true}
     elseif m.kind=='job' then
       if type(d.dryRun)=='boolean' then w.dryRun=d.dryRun end
       local desired=cfg.workerModes and cfg.workerModes[tostring(id)]
@@ -266,18 +283,18 @@ function Controller.run(cfg)
       if w.remoteMode and desired~=nil and desired~=w.dryRun and not assigned then
         return {mode=desired and 'dry' or 'live'}
       end
-      if not state.active or not fresh() then return {wait=10,reason=scanError or 'Paused'} end
+      if not state.active or not fresh() then return {wait=3,reason=scanError or 'Paused',returnHome=not state.active} end
       -- Retries/reconnections recover the existing assignment, never acquire a second.
       for k,l in pairs(leases) do
         if l.untilTime<U.now() then leases[k]=nil;Batches.release(state.batches,l.owner)
         elseif l.owner==id then
           Vines.scan(l.job,world)
           local path,goal=route(id,d.pos,Vines.goals(l.job))
-          if path then w.route=path;return {job=l.job,path=path,goal=goal,token=l.token} end
+          if path then w.route=path;w.routeStart=U.copy(d.pos);return {job=l.job,path=path,goal=goal,token=l.token} end
           return {wait=10,reason='Assigned crop currently unreachable'}
         end
       end
-      local options={}
+      local options={};local _,debts=garden:counts()
       local stock=Seeds.stock(cfg.seedSource)
       local fleet={};local inspectOnly=w.dryRun
       for _,other in pairs(workers) do if U.now()-other.seen<30 then
@@ -300,8 +317,8 @@ function Controller.run(cfg)
         local k=j.key
         local h=state.history[k]
         if not state.excluded[k] and not leases[k] and due(j,h) then
-          local bonus=j.repair and 10000 or (j.seed and garden:debts(j.seed)>0 and 1000 or 0)
-          options[#options+1]={job=j,score=U.distance(d.pos,j.pos)-bonus}
+          local bonus=j.repair and 10000 or (j.seed and (debts[j.seed] or 0)>0 and 1000 or 0)
+          options[#options+1]={job=j,score=U.distance(d.pos,j.pos)-bonus-(d.resume==j.key and 100000 or 0)}
         end
       end
       for key,p in pairs(garden.data.plots) do
@@ -317,16 +334,16 @@ function Controller.run(cfg)
           local token=tostring(id)..':'..boot..':'..leaseSerial..':'..j.key
           leases[j.key]={owner=id,untilTime=U.now()+120,job=j,token=token}
           Batches.assigned(state.batches,id,j)
-          w.route=path;save() -- Persist round ownership before the worker leaves or unloads.
+          w.route=path;w.routeStart=U.copy(d.pos);persist() -- Persist round ownership before the worker leaves or unloads.
           return {job=j,path=path,goal=goal,token=token}
         end
         state.history[j.key]=state.history[j.key] or {interval=60}
         state.history[j.key].due=U.now()+120
         state.history[j.key].seen=U.now()
         state.history[j.key].outcome='unreachable'
-        Batches.skip(state.batches,j.key)
+        if goal=='Start outside scanner coverage' then Batches.skip(state.batches,j.key) end
       end
-      return {wait=10,reason='No ready reachable work'}
+      return {wait=3,reason='Waiting for next available crop'}
     elseif m.kind=='release' then release(id);return {ok=true} end
     return nil,'Unknown request'
   end
@@ -335,32 +352,9 @@ function Controller.run(cfg)
   local function discoverLoop()
     while true do pcall(N.answer,cfg) end
   end
-  local function networkLoop()
-    while true do
-      local id,m=rednet.receive(protocol)
-      if type(m)=='table' and m.v==1 and type(m.seq)=='number' and type(m.data)=='table' then
-        local reply={seq=m.seq,session=m.session}
-        if not cfg.allowed[tostring(id)] then
-          reply.error='Worker '..id..' is not paired. Run allow '..id..' on controller.'
-        elseif m.kind=='heartbeat' then
-          -- Heartbeats reuse a sentinel sequence and must never be response-cached.
-          pcall(handle,id,m)
-          reply=nil
-        else
-          local key=tostring(id)..':'..tostring(m.session)..':'..tostring(m.seq)
-          if responses[key] then reply=responses[key]
-          else
-            local ok,data,err=pcall(handle,id,m)
-            if ok then reply.data=data;reply.error=err else reply.error=tostring(data) end
-            responses[key]=reply
-            local keysCount=0;for _ in pairs(responses) do keysCount=keysCount+1 end
-            if keysCount>100 then responses={[key]=reply} end
-          end
-        end
-        if reply then rednet.send(id,reply,protocol) end
-      end
-    end
-  end
+  local mailbox=Mailbox.new({protocol=protocol,allowed=cfg.allowed,handle=handle,performance=performance})
+  local function networkLoop() mailbox:receive() end
+  local function requestLoop() mailbox:work() end
   local function scanLoop()
     while true do
       if U.now()>=scanAt and not scanBusy then
@@ -387,6 +381,7 @@ function Controller.run(cfg)
         scanAt=U.now()+cfg.scanInterval;scanBusy=false
       end
       if U.now()-lastSave>60 then save() end
+      if U.now()-profileSaved>30 then S.save('farm/data/performance',{since=performance.since,untilTime=U.now(),samples=performance.samples,expanded=performance.expanded});profileSaved=U.now() end
       sleep(1)
     end
   end
@@ -436,7 +431,9 @@ function Controller.run(cfg)
       local model=displayModel();dashboardError=nil
       for _,name in ipairs(names) do
         if peripheral.hasType(name,'monitor') then
+          local started=U.now()
           local ok,err=pcall(function() dashboard:draw(peripheral.wrap(name),name,model) end)
+          performance:record('draw',started)
           if not ok then dashboardError=tostring(err) end
         end
       end
@@ -551,6 +548,6 @@ function Controller.run(cfg)
       else print('No command called '..cmd..'. Type help for the list.') end
     end
   end
-  parallel.waitForAny(networkLoop,discoverLoop,scanLoop,displayLoop,playerLoop,consoleLoop,touchLoop,stopLoop)
+  parallel.waitForAny(networkLoop,discoverLoop,scanLoop,displayLoop,playerLoop,consoleLoop,touchLoop,stopLoop,requestLoop)
 end
 return Controller

@@ -1,4 +1,4 @@
 {
-  "version": "0.4.3",
-  "notes": "Clear ordinary hanging vines up to three blocks above known crops and preserve vine-invaded replant gaps; never clear crop vines or vines during inspection-only runs."
+  "version": "0.5.0",
+  "notes": "Responsive fleet networking with event yields and short retries; indexed 3D routes and traffic coordination; durable small mutation journals; restart assignment resume; no unnecessary dock trips; 8000 stored fuel and a backup stack. Tested with sixteen simulated workers."
 }

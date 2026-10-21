@@ -41,23 +41,32 @@ function G:scan(world,jobs,started,now,custom)
   end
   for k,j in pairs(jobs) do if not self.data.plots[k] then self:observe(j,now) end end
 end
+function G:counts()
+  local living,debts={},{}
+  for _,p in pairs(self.data.plots) do
+    local seed=p.job.seed
+    if seed then
+      if p.live and not p.intent then living[seed]=(living[seed] or 0)+1 end
+      if p.debt then debts[seed]=(debts[seed] or 0)+1 end
+    end
+  end
+  return living,debts
+end
 function G:living(seed)
-  local count=0
-  for _,p in pairs(self.data.plots) do if p.live and p.job.seed==seed and not p.intent then count=count+1 end end
-  return count
+  local living=self:counts();return living[seed] or 0
 end
 function G:debts(seed)
-  local count=0
-  for _,p in pairs(self.data.plots) do if p.debt and (not seed or p.job.seed==seed) then count=count+1 end end
-  return count
+  local _,debts=self:counts()
+  if seed then return debts[seed] or 0 end
+  local count=0;for _,n in pairs(debts) do count=count+n end;return count
 end
 function G:reserves(batch)
-  local keep={}
+  local keep={};local living=self:counts()
   for _,p in pairs(self.data.plots) do
     local j=p.job;local item=j.seed or j.item
     if item then
       if (j.crop or j.name)==batch then keep[item]=4
-      elseif p.debt or (p.live and j.seed and not j.guaranteedSeed and self:living(item)<=1) then
+      elseif p.debt or (p.live and j.seed and not j.guaranteedSeed and (living[item] or 0)<=1) then
         keep[item]=math.max(keep[item] or 0,1)
       end
     end
@@ -113,7 +122,7 @@ function G:finish(job,token,after,world,custom,now)
   return true
 end
 function G:tasks(inventory,stock,now,dryRun)
-  local tasks={};inventory=inventory or {};stock=stock or {}
+  local tasks={};inventory=inventory or {};stock=stock or {};local living=self:counts()
   for _,p in pairs(self.data.plots) do
     if not p.intent or p.intent.expires<=now then
       local j={};for k,v in pairs(p.job) do j[k]=v end
@@ -124,7 +133,7 @@ function G:tasks(inventory,stock,now,dryRun)
         end
       elseif p.live then
         local available=(inventory[j.seed] or 0)>0
-        local allowed=dryRun or self:canHarvest(j,available)
+        local allowed=dryRun or not j.seed or available or j.guaranteedSeed or (living[j.seed] or 0)>1
         if not allowed and (stock[j.seed] or 0)>0 then allowed=true;j.fetchSeed=true end
         if allowed then tasks[#tasks+1]=j end
       end

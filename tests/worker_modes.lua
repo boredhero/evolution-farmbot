@@ -1,8 +1,11 @@
 -- SPDX-License-Identifier: GPL-3.0-only
 -- Copyright (C) 2026 boredhero
 package.path='./?.lua;'..package.path
+os.queueEvent=function() end
+os.pullEvent=function() coroutine.yield() end
 local S=require('farm.lib.store')
 local Controller=require('farm.controller')
+fs={exists=function() return false end}
 local cfg={center={x=0,y=0,z=0},radius=5,scanInterval=120,group='test',allowed={['1']=true},customCrops={}}
 local stop={};local inputs,queue={},{};local replies={};local saved
 os.epoch=function() return 100000 end
@@ -22,9 +25,9 @@ local function enqueue(kind,dry)
   seq=seq+1;queue[#queue+1]={v=1,seq=seq,session='test',kind=kind,
     data={pos={x=0,y=1,z=0},dock={x=0,y=1,z=0},dryRun=dry,remoteMode=true}}
 end
-parallel={waitForAny=function(network,discover,scan,display,player,console)
-  local net=coroutine.create(network);local con=coroutine.create(console)
-  local function resume(co) local ok,err=coroutine.resume(co);assert(ok,err) end
+parallel={waitForAny=function(network,discover,scan,display,player,console,touch,stopLoop,request)
+  local work=coroutine.create(request);local net=coroutine.create(network);local con=coroutine.create(console)
+  local function resume(co) local ok,err=coroutine.resume(co);assert(ok,err);if co==net then ok,err=coroutine.resume(work);assert(ok,err) end end
   inputs[1]='farm worker 1 mode live';resume(con)
   assert(saved.workerModes['1']==false,'offline command must persist')
   enqueue('hello',true);resume(net)

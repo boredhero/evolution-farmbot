@@ -10,6 +10,8 @@ local Compost=require('farm.lib.compost')
 local Pickup=require('farm.lib.pickup')
 local Soil=require('farm.lib.soil')
 local Vines=require('farm.lib.vines')
+local Traffic=require('farm.lib.traffic')
+local Fuel=require('farm.lib.fuel')
 local Worker={}
 function Worker.inventory()
   local counts={}
@@ -19,13 +21,8 @@ function Worker.inventory()
   end
   return counts
 end
-local fuelItems={['minecraft:coal']=true,['minecraft:charcoal']=true,['minecraft:coal_block']=true}
-function Worker.refuel()
-  for slot=1,16 do
-    local item=turtle.getItemDetail(slot)
-    if item and fuelItems[item.name] then turtle.select(slot);turtle.refuel() end
-  end
-end
+local fuelItems=Fuel.values
+Worker.refuel=Fuel.refuel
 function Worker.compact()
   Worker.refuel()
   for source=2,16 do
@@ -81,16 +78,17 @@ function Worker.run(cfg)
   cfg.session=tostring(os.getComputerID())..':'..tostring(os.epoch('utc'))
   local request=N.client(cfg)
   local saved=S.load('farm/data/worker',{pending=nil})
+  if saved.commissioned==nil and ((saved.stations and saved.stations.output) or saved.pickupBatch) then saved.commissioned=true end
   saved.stats=saved.stats or {steps=0}
   Worker.refuel()
   local pos,heading=Worker.calibrate()
   local status='Starting';local active=false
   local pickupCells=saved.pickupCells or {};saved.pickupCells=pickupCells
   local pickupBatch=saved.pickupBatch
-  local function checkpoint() saved.pos=pos;saved.heading=heading;S.save('farm/data/worker',saved) end
+  local function checkpoint() saved.pos=pos;saved.heading=heading;saved.fuel=turtle.getFuelLevel();saved.status=status;S.save('farm/data/worker',saved) end
   local function rpc(kind,data)
     data=data or {};data.pos=U.copy(pos);data.fuel=turtle.getFuelLevel();data.status=status
-    data.inventory=Worker.inventory()
+    if kind~='step' then data.inventory=Worker.inventory() end
     data.dryRun=cfg.dryRun;data.stats=saved.stats
     return request(kind,data)
   end
@@ -114,7 +112,8 @@ function Worker.run(cfg)
     local ok,b=turtle['inspect'..side]()
     return ok and b or nil,side
   end
-  local function follow(path,homing)
+  local trail={}
+  local function follow(path,homing,retreat)
     for i,nextPos in ipairs(path) do
       if U.distance(pos,nextPos)~=1 then return false,'Invalid route step' end
       if i%8==1 then
@@ -123,11 +122,21 @@ function Worker.run(cfg)
         active=reply.active
         if not active and not homing then return false,'paused' end
       end
+      local permit
+      for attempt=1,3 do
+        permit=rpc('step',{target=nextPos})
+        if not permit or permit.ok then break end
+        status=permit and permit.reason or 'Waiting for traffic controller';sleep(0.2+os.getComputerID()%4*0.05)
+      end
+      if not permit or not permit.ok then
+        return false,permit and permit.reason or 'Traffic controller unavailable',
+          {pos=U.copy(nextPos),name='computercraft:turtle_advanced',traffic=true,peer=permit and permit.worker}
+      end
       local side=direction(nextPos)
       local found,block=turtle['inspect'..side]()
       if found then
         rpc('blocked',{block=nextPos,name=block.name})
-        return false,'Blocked at '..U.key(nextPos)..' by '..tostring(block.name),{pos=U.copy(nextPos),name=block.name}
+        return false,'Blocked at '..U.key(nextPos)..' by '..tostring(block.name),{pos=U.copy(nextPos),name=block.name,traffic=Traffic.turtle(block.name)}
       end
       if not cfg.dryRun then Pickup.collect(side) end
       local move=side=='Up' and turtle.up or side=='Down' and turtle.down or turtle.forward
@@ -136,6 +145,7 @@ function Worker.run(cfg)
         rpc('blocked',{block=nextPos})
         return false,'Movement failed at '..U.key(nextPos)..': '..tostring(err or 'unknown obstacle')
       end
+      if not retreat then trail[#trail+1]=U.copy(pos);if #trail>12 then table.remove(trail,1) end end
       pos=U.copy(nextPos);saved.stats.steps=saved.stats.steps+1
       if not cfg.dryRun then Pickup.collect('Down');pickupCells[U.key(pos)]=nil end
       -- Save at route boundaries; GPS supplies actual position after a crash.
@@ -161,7 +171,13 @@ function Worker.run(cfg)
       local route,err
       if attempt==1 and initialPath then route={path=initialPath}
       else route,err=rpc('route',{goals=goals}) end
-      if not route then lastError=tostring(err);status='Route: '..lastError;sleep(3)
+      if not route then
+        lastError=tostring(err);status='Route: '..lastError
+        local back=trail[#trail]
+        if attempt>1 and back and U.distance(pos,back)==1 then
+          if follow({back},true,true) then table.remove(trail) end
+        end
+        sleep(0.5+os.getComputerID()%4*0.1)
       else
         local fuel=turtle.getFuelLevel()
         if fuel~='unlimited' then
@@ -176,6 +192,13 @@ function Worker.run(cfg)
         local ok,reason,obstacle=follow(route.path,homing)
         if ok then return true end
         if reason=='paused' then return false,reason end
+        if obstacle and obstacle.traffic and (not obstacle.peer or os.getComputerID()>tonumber(obstacle.peer)) then
+          local back=trail[#trail]
+          if back and U.distance(pos,back)==1 then
+            local yielded=follow({back},true,true)
+            if yielded then table.remove(trail);status='Yielding to another worker' end
+          end
+        end
         if column and obstacle and Vines.allowed(column,obstacle.pos,{name=obstacle.name}) and not cfg.dryRun then
           local cleared,why=clearVine(column,obstacle.pos)
           if not cleared then return false,why end
@@ -278,7 +301,7 @@ function Worker.run(cfg)
     Worker.refuel()
     local plan,planError=rpc('seed_plan')
     if not plan then return false,planError end
-    local kept,types={},0
+    local kept,types={},0;local fuelKept=0
     local bank=cfg.seedBuffer and cfg.seedBuffer~=''
     if bank then
       local exists,seedBlock=turtle.inspectDown()
@@ -291,6 +314,9 @@ function Worker.run(cfg)
         turtle.select(slot)
         if Soil.isHoe(turtle.getItemDetail(slot,true)) then
           -- Keep carried recovery tools; never export them as stray harvest drops.
+        elseif fuelItems[item.name] and turtle.getFuelLevel()~='unlimited' then
+          local keep=math.min(item.count,math.max(0,64-fuelKept));fuelKept=fuelKept+keep
+          if item.count>keep and (not turtle['drop'..outputSide](item.count-keep) or turtle.getItemCount(slot)~=keep) then return false,'Output chest full' end
         elseif plan.seeds[item.name] then
           -- Batch supplies plus essential replant items; export unrelated reserves.
           local limit=plan.keep and (plan.keep[item.name] or 0) or 4
@@ -316,18 +342,16 @@ function Worker.run(cfg)
     local empty
     for slot=1,16 do if turtle.getItemCount(slot)==0 then empty=slot;break end end
     if stations.fuel then
-      if empty then
+      if empty and Fuel.needed() then
         local ok,side=approach(stations.fuel,'fuel')
         if not ok then return false,side end
-        turtle.select(empty);turtle['suck'..side](64);Worker.refuel()
-        if turtle.getItemCount(empty)>0 then turtle.select(empty);turtle['drop'..side]() end
+        Fuel.fill(side)
       end
     else
       -- The dedicated chest ABOVE the docking cell supplies coal/charcoal only.
       local fuelFound,fuelBlock=turtle.inspectUp()
-      if fuelFound and fuelBlock.name==cfg.fuelBlock and empty then
-        turtle.select(empty);turtle.suckUp(64);Worker.refuel()
-        if turtle.getItemCount(empty)>0 then turtle.select(empty);turtle.dropUp() end
+      if fuelFound and fuelBlock.name==cfg.fuelBlock and empty and Fuel.needed() then
+        Fuel.fill('Up')
       end
     end
     local level=turtle.getFuelLevel()
@@ -515,11 +539,11 @@ function Worker.run(cfg)
     while true do
       rednet.send(cfg.controller,{v=1,seq=-1,session=cfg.session,kind='heartbeat',
         data={pos=pos,fuel=turtle.getFuelLevel(),status=status,stats=saved.stats}},N.protocol(cfg))
-      sleep(5)
+      sleep(1)
     end
   end
   local function work()
-    local needsDock='Startup'
+    local needsDock=saved.dockReason or (not saved.commissioned and 'Startup' or false)
     while true do
       if saved.crafting then
         local made,reason=craftSeed({seed=saved.crafting.seed})
@@ -533,21 +557,25 @@ function Worker.run(cfg)
         cfg.recoverAck=control.recover;S.save('farm/config',cfg)
         needsDock='Recovery requested';status='Recovery: returning to dock';print(status)
       end
-      if needsDock or freeSlots()==0 then
-        local ok,err=dock(needsDock or 'All 16 slots occupied')
+      if needsDock or freeSlots()<=1 then
+        saved.dockReason=needsDock or 'One empty inventory slot remaining';checkpoint()
+        local ok,err=dock(saved.dockReason)
         if not ok then status=tostring(err);print(status);sleep(10)
-        else needsDock=false end
+        else needsDock=false;saved.dockReason=nil;saved.commissioned=true;checkpoint() end
       else
-        local reply,err=rpc('job')
+        local reply,err=rpc('job',{resume=saved.assignment and saved.assignment.key})
         if not reply then status=tostring(err);sleep(10)
         elseif reply.mode=='live' or reply.mode=='dry' then
           cfg.dryRun=reply.mode=='dry';S.save('farm/config',cfg)
           status='Mode: '..reply.mode;print(status)
         elseif not reply.job then
           status=reply.reason or 'Waiting'
-          if not U.equal(pos,cfg.dock) then needsDock=reply.reason or 'No available work' else sleep(reply.wait or 10) end
+          local fuel=turtle.getFuelLevel()
+          if reply.returnHome and not U.equal(pos,cfg.dock) then needsDock=reply.reason or 'Paused'
+          elseif fuel~='unlimited' and fuel<cfg.fuelReserve*2 then needsDock='Low fuel reserve'
+          else sleep(reply.wait or 3) end
         else
-          local job=reply.job
+          local job=reply.job;saved.assignment={key=job.key,crop=job.crop or job.name};checkpoint()
           local swept=false
           if pickupBatch and pickupBatch~=(job.crop or job.name) then swept=sweepDrops() end
           pickupBatch=job.crop or job.name;saved.pickupBatch=pickupBatch
@@ -566,8 +594,9 @@ function Worker.run(cfg)
           local home,homeError=request('route',{pos=reply.goal,goals={cfg.dock},preview=true})
           local fuel=turtle.getFuelLevel()
           if not reply.path or not home or (fuel~='unlimited' and fuel<#reply.path+#home.path+cfg.fuelReserve) then
-            rpc('release');needsDock=not reply.path and 'Job route unavailable' or not home and 'Return route unavailable' or 'Fuel reserve for next job'
-            if not home then status=tostring(homeError);sleep(5) end
+            rpc('release')
+            if reply.path and home then needsDock='Fuel reserve for next job'
+            else status=not home and tostring(homeError) or 'Waiting for a route';sleep(1) end
           else
             status=(cfg.dryRun and 'Inspecting ' or 'Farming ')..job.name
             local reached,why=navigate(Vines.goals(job),false,reply.path,job)
@@ -587,11 +616,11 @@ function Worker.run(cfg)
                 detail=detail,state=blockState,after=after})
               assert(recorded,recordError) -- Never discard an unacknowledged harvest journal.
               if outcome=='harvested' then Pickup.add(pickupCells,job);Pickup.collect('Down') end
-              saved.pending=nil;checkpoint()
+              saved.pending=nil;saved.assignment=nil;checkpoint()
               if outcome=='error' then status=detail;print(detail);sleep(10) end
             else
               rpc('result',{job=job,token=reply.token,outcome='unreachable',detail=why})
-              needsDock='Job travel failed: '..tostring(why)
+              status='Waiting after route failure: '..tostring(why);sleep(1)
             end
           end
           end

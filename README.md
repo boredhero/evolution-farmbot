@@ -22,7 +22,7 @@ numbered walkthrough from crafting the parts to the first harvest.
 - **Works in crop batches.** The controller coordinates finite rounds across the fleet,
   prioritizing the largest groups known to be ready and keeping each worker on one crop
   type where possible. Small plots get a turn before regrown crops restart the round.
-  Workers merge compatible stacks and use all 16 slots before returning for inventory space.
+  Workers merge compatible stacks and return for inventory space when one empty slot remains.
 - **Finds crops by itself.** Every 120 seconds the Geo Scanner surveys a 65x65x65 cube around the
   controller. Anything supported that you planted shows up on the next survey.
 - **Harvests and replants.** A turtle travels to the plant, inspects it for real maturity, and
@@ -254,3 +254,9 @@ Lifetime statistics: tap **STATS** at the bottom of either monitor. The page pre
 For soil recovery, put a hoe in each worker inventory. Hoes are retained during unloading. If replanting a known farmland crop fails, the worker inspects the soil beneath the empty planting cell, uses a carried hoe on tagged dirt, verifies farmland, then retries planting. Two uses allow coarse/rooted dirt conversion; game rules decide whether modded soil is tillable. Existing crops, non-dirt supports and special-support crops are preserved. Errors distinguish the planting coordinate from the soil coordinate. A missing hoe leaves the repair debt pending.
 
 Vine maintenance runs during crop visits: ordinary minecraft:vine blocks in the crop column up to three blocks above it are cleared top-down. A vine occupying a remembered replant gap is also removed, with the planting debt preserved. Other blocks, glow-berry vines and neighboring columns are untouched. New vines are discovered by regular scans or inspected route obstacles; inspection-only mode never clears them.
+
+Fleet responsiveness: the controller uses linear crop-population counts and small atomic mutation records between full checkpoints, including recovery from the backup snapshot. Synthetic tests cover 16 workers and 4096 plants; live capacity depends on farm layout and hardware. Workers reserve the next movement cell, report positions every second, favor routes away from other upcoming paths, and wait or back out when blocked. Turtle encounters use short-lived avoidance instead of rescanning the entire farm. Per-operation latency samples are recorded in farm/data/performance every 30 seconds.
+
+Workers persist their unfinished crop assignment, current round, pickup queue and required docking work. On reboot they locate themselves with GPS and request their unfinished crop first; an established worker does not return home just because it restarted. A completed crop transitions directly to the next available type. Ordinary RPC retries start after one second; movement-permission retries after half a second. A dedicated receiver preserves incoming messages while a single ordered handler processes durable mutations; heartbeat and traffic replies bypass expensive searches.
+
+Pathfinding uses numeric voxel indices and cooperative queued-event yields, not timer sleeps. Valid routes survive crop inspections and relax planned traffic avoidance only when it changes the search. Fuel refills target 8000 stored movement fuel (within the turtle limit) plus one carried backup stack, replenished when visiting the fuel chest. Carried fuel is consumed automatically as needed. No new configuration switches are required.

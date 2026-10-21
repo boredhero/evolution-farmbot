@@ -787,6 +787,10 @@ local Seeds=require('farm.lib.seeds')
 local Garden=require('farm.lib.garden')
 local Metrics=require('farm.lib.metrics')
 local Vines=require('farm.lib.vines')
+local Performance=require('farm.lib.performance')
+local Journal=require('farm.lib.journal')
+local Traffic=require('farm.lib.traffic')
+local Mailbox=require('farm.lib.mailbox')
 local Dashboard=require('farm.dashboard')
 local CommandHistory=require('farm.lib.command_history')
 local Players=require('farm.lib.players')
@@ -801,6 +805,7 @@ function Controller.run(cfg)
   U.openModem()
   local protocol=N.protocol(cfg)
   local state=S.load('farm/data/controller',{active=false,history={},excluded={}})
+  local journal=Journal.new('farm/data/controller',state)
   state.history=state.history or {};state.excluded=state.excluded or {}
   state.batches=state.batches or {};state.growth=state.growth or {}
   if state.batches.schema~=2 then state.batches={schema=2} end
@@ -818,8 +823,7 @@ function Controller.run(cfg)
   local jobs,workers,leases,obstacles,responses,cache={},{},{},{},{},{}
   local craftLocks={}
   local function hasCrafter()
-    for _,b in pairs(world.blocks) do if b.name=='minecraft:crafter' then return true end end
-    return false
+    return state.crafters and #state.crafters>0
   end
   local function plantingInventory(inventory)
     local out={};for item,count in pairs(inventory or {}) do out[item]=count end
@@ -840,12 +844,17 @@ function Controller.run(cfg)
   assert(scanner,'Attach the Geo Scanner directly to the controller.')
   local scan=scanner.scanBlocks or scanner.scan
   assert(type(scan)=='function','Geo Scanner has no supported scan method.')
+  local performance=Performance.new();local profileSaved=U.now()
   local function save()
+    local started=U.now()
     metrics:tick(U.now())
     -- Prune long-absent plants so abandoned crops do not fill the disk.
     local cutoff=U.now()-7*86400
     for k,h in pairs(state.history) do if (h.seen or 0)<cutoff then state.history[k]=nil end end
-    S.save('farm/data/controller',state);lastSave=U.now()
+    journal:checkpoint();lastSave=U.now();performance:record('save',started)
+  end
+  local function persist(job)
+    local started=U.now();metrics:tick(U.now());journal:record(job);performance:record('journal',started)
   end
   local function summary()
     local total,unknown,active=0,0,0
@@ -855,34 +864,40 @@ function Controller.run(cfg)
       scanAge=lastScan>0 and math.floor(U.now()-lastScan) or -1,error=scanError,
       cachedHits=hits,epoch=epoch,center=cfg.center,radius=cfg.radius,debts=garden:debts()}
   end
-  local function avoidFor(id)
-    local avoid={};local now=U.now()
+  local function avoidFor(id,planned)
+    local now=U.now();local avoid=Traffic.avoid(workers,id,now,planned)
     for k,untilTime in pairs(obstacles) do
       if untilTime>now then avoid[k]=true else obstacles[k]=nil end
-    end
-    for other,w in pairs(workers) do
-      if other~=id then
-        if now-w.seen<30 and w.pos then avoid[U.key(w.pos)]=true end
-        if w.dock then avoid[U.key(w.dock)]=true end
-      end
     end
     return avoid
   end
   local function route(id,start,goals)
-    local avoid=avoidFor(id)
+    local started=U.now()
+    local avoid=avoidFor(id,true)
     local parts={U.key(start)};for _,g in ipairs(goals) do parts[#parts+1]=U.key(g) end
     local key=table.concat(parts,'|')
     local cached=cache[key]
-    if cached and P.valid(world,start,cached.path,avoid) then hits=hits+1;return cached.path,cached.goal end
-    local path,goal=P.find(world,start,goals,{avoid=avoid,yieldFn=U.yield})
+    if cached and P.valid(world,start,cached.path,avoid) then hits=hits+1;cached.used=U.now();performance:record('route_cached',started);return cached.path,cached.goal end
+    local path,goal,expanded=P.find(world,start,goals,{avoid=avoid,yieldFn=U.yield})
+    if not path then
+      local relaxed=avoidFor(id,false);local changed=false
+      for k in pairs(avoid) do if not relaxed[k] then changed=true;break end end
+      if changed then
+        local extra;path,goal,extra=P.find(world,start,goals,{avoid=relaxed,yieldFn=U.yield});expanded=(expanded or 0)+(extra or 0)
+      end
+    end
+    performance.expanded=(performance.expanded or 0)+(expanded or 0)
     if path then
       if #parts>0 then
         local count=0;for _ in pairs(cache) do count=count+1 end
-        if count>=128 then cache={} end
+        if count>=128 and not cache[key] then
+          local oldest,used;for k,r in pairs(cache) do if not used or (r.used or 0)<used then oldest,used=k,r.used or 0 end end
+          if oldest then cache[oldest]=nil end
+        end
       end
-      cache[key]={path=path,goal=goal};return path,goal
+      cache[key]={path=path,goal=goal,used=U.now()};performance:record('route',started);return path,goal
     end
-    return nil,goal
+    performance:record('route_failed',started);return nil,goal
   end
   local function fresh() return lastScan>0 and U.now()-lastScan<cfg.scanInterval*3 end
   local function release(id)
@@ -894,7 +909,7 @@ function Controller.run(cfg)
     workers[id]=workers[id] or {}
     local w=workers[id];w.seen=U.now()
     metrics:report(id,d.stats,U.now())
-    if d.pos and not d.preview then w.pos=d.pos end
+    if d.pos and not d.preview then Traffic.update(w,d.pos,U.now()) end
     if d.fuel then w.fuel=d.fuel end
     if d.status then w.status=tostring(d.status):sub(1,120) end
     if d.inventory then w.inventory=d.inventory end
@@ -914,9 +929,9 @@ function Controller.run(cfg)
       end
       return {active=state.active,center=cfg.center,radius=cfg.radius}
     elseif m.kind=='seed_plan' then
-      local stock=Seeds.stock(cfg.seedSource);local needed={}
+      local stock=Seeds.stock(cfg.seedSource);local needed={};local living,debts=garden:counts()
       for seed in pairs(garden.data.seeds) do
-        local target=math.max(16,math.min(64,garden:living(seed)+garden:debts(seed)*2))
+        local target=math.max(16,math.min(64,(living[seed] or 0)+(debts[seed] or 0)*2))
         needed[seed]=math.max(0,target-(stock[seed] or 0))
       end
       local batch=state.batches.workers and state.batches.workers[tostring(id)]
@@ -941,7 +956,7 @@ function Controller.run(cfg)
     elseif m.kind=='recover' then
       local p=d.job and garden.data.plots[d.job.key]
       if p and p.version==d.job.version and p.intent and p.intent.owner==id then
-        p.intent=nil;p.updated=U.now();save()
+        p.intent=nil;p.updated=U.now();persist(d.job)
       end
       release(id);scanAt=0
       return {ok=true} -- Existing durable debt survives; never resurrect an obsolete crop plan.
@@ -950,7 +965,7 @@ function Controller.run(cfg)
       local l=d.job and leases[d.job.key]
       if not l or l.owner~=id or l.token~=d.token then return nil,'Crop assignment is no longer valid' end
       local answer,why=garden:begin(l.job,id,l.token,(d.inventory[l.job.seed] or 0)>0,U.now())
-      if answer then save() end -- Write-ahead debt must reach disk BEFORE authorizing a dig.
+      if answer then persist(l.job) end -- Write-ahead debt must reach disk BEFORE authorizing a dig.
       return answer,why
     elseif m.kind=='seed' then
       if not w.dock or not U.equal(d.pos,w.dock) then return nil,'Seed delivery requires the worker at its dock' end
@@ -986,18 +1001,20 @@ function Controller.run(cfg)
       return {ok=true}
     elseif m.kind=='control' then
       return {recover=cfg.workerRecover and cfg.workerRecover[tostring(id)]}
+    elseif m.kind=='step' then return Traffic.claim(workers,id,d.pos,d.target,U.now())
     elseif m.kind=='status' then return summary()
     elseif m.kind=='blocked' then
       if d.block and world:inside(d.block) then
-        obstacles[U.key(d.block)]=U.now()+20
-        if d.name then world:observe(d.block,{name=d.name});cache={};epoch=epoch+1;scanAt=0 end
+        local moving=Traffic.turtle(d.name)
+        obstacles[U.key(d.block)]=U.now()+(moving and 1 or 20);w.nextPos=nil
+        if d.name then world:observe(d.block,{name=d.name});cache={};epoch=epoch+1;if not moving then scanAt=0 end end
       end
       return {ok=true}
     elseif m.kind=='route' then
       if not fresh() then return nil,'Waiting for a fresh scanner map' end
       local path,goal=route(id,d.pos,d.goals or {})
       if not path then return nil,goal end
-      if not d.preview then w.route=path end
+      if not d.preview then w.route=path;w.routeStart=U.copy(d.pos) end
       return {path=path,goal=goal}
     elseif m.kind=='cleared_vine' then
       local l=d.job and leases[d.job.key]
@@ -1015,7 +1032,7 @@ function Controller.run(cfg)
         if d.outcome=='harvested' and j.mode=='cane' and j.rootY then
           for y=j.rootY+1,j.pos.y do world:observe({x=j.pos.x,y=y,z=j.pos.z},false) end
         end
-        cache={};epoch=epoch+1
+        epoch=epoch+1 -- Cached routes are checked against current occupancy before reuse.
       end
       garden:finish(j,d.token,d.after,world,cfg.customCrops,U.now())
       local h=state.history[j.key] or {interval=60}
@@ -1034,7 +1051,7 @@ function Controller.run(cfg)
       elseif j.repair then h.due=U.now()+5 end
       if d.outcome=='changed' then jobs[j.key]=nil end
       if d.outcome=='harvested' and (j.mode=='fruit' or j.mode=='cane' or j.mode=='rice' or j.mode=='upper') then jobs[j.key]=nil end
-      save();return {ok=true}
+      persist(j);return {ok=true}
     elseif m.kind=='job' then
       if type(d.dryRun)=='boolean' then w.dryRun=d.dryRun end
       local desired=cfg.workerModes and cfg.workerModes[tostring(id)]
@@ -1043,18 +1060,18 @@ function Controller.run(cfg)
       if w.remoteMode and desired~=nil and desired~=w.dryRun and not assigned then
         return {mode=desired and 'dry' or 'live'}
       end
-      if not state.active or not fresh() then return {wait=10,reason=scanError or 'Paused'} end
+      if not state.active or not fresh() then return {wait=3,reason=scanError or 'Paused',returnHome=not state.active} end
       -- Retries/reconnections recover the existing assignment, never acquire a second.
       for k,l in pairs(leases) do
         if l.untilTime<U.now() then leases[k]=nil;Batches.release(state.batches,l.owner)
         elseif l.owner==id then
           Vines.scan(l.job,world)
           local path,goal=route(id,d.pos,Vines.goals(l.job))
-          if path then w.route=path;return {job=l.job,path=path,goal=goal,token=l.token} end
+          if path then w.route=path;w.routeStart=U.copy(d.pos);return {job=l.job,path=path,goal=goal,token=l.token} end
           return {wait=10,reason='Assigned crop currently unreachable'}
         end
       end
-      local options={}
+      local options={};local _,debts=garden:counts()
       local stock=Seeds.stock(cfg.seedSource)
       local fleet={};local inspectOnly=w.dryRun
       for _,other in pairs(workers) do if U.now()-other.seen<30 then
@@ -1077,8 +1094,8 @@ function Controller.run(cfg)
         local k=j.key
         local h=state.history[k]
         if not state.excluded[k] and not leases[k] and due(j,h) then
-          local bonus=j.repair and 10000 or (j.seed and garden:debts(j.seed)>0 and 1000 or 0)
-          options[#options+1]={job=j,score=U.distance(d.pos,j.pos)-bonus}
+          local bonus=j.repair and 10000 or (j.seed and (debts[j.seed] or 0)>0 and 1000 or 0)
+          options[#options+1]={job=j,score=U.distance(d.pos,j.pos)-bonus-(d.resume==j.key and 100000 or 0)}
         end
       end
       for key,p in pairs(garden.data.plots) do
@@ -1094,16 +1111,16 @@ function Controller.run(cfg)
           local token=tostring(id)..':'..boot..':'..leaseSerial..':'..j.key
           leases[j.key]={owner=id,untilTime=U.now()+120,job=j,token=token}
           Batches.assigned(state.batches,id,j)
-          w.route=path;save() -- Persist round ownership before the worker leaves or unloads.
+          w.route=path;w.routeStart=U.copy(d.pos);persist() -- Persist round ownership before the worker leaves or unloads.
           return {job=j,path=path,goal=goal,token=token}
         end
         state.history[j.key]=state.history[j.key] or {interval=60}
         state.history[j.key].due=U.now()+120
         state.history[j.key].seen=U.now()
         state.history[j.key].outcome='unreachable'
-        Batches.skip(state.batches,j.key)
+        if goal=='Start outside scanner coverage' then Batches.skip(state.batches,j.key) end
       end
-      return {wait=10,reason='No ready reachable work'}
+      return {wait=3,reason='Waiting for next available crop'}
     elseif m.kind=='release' then release(id);return {ok=true} end
     return nil,'Unknown request'
   end
@@ -1112,32 +1129,9 @@ function Controller.run(cfg)
   local function discoverLoop()
     while true do pcall(N.answer,cfg) end
   end
-  local function networkLoop()
-    while true do
-      local id,m=rednet.receive(protocol)
-      if type(m)=='table' and m.v==1 and type(m.seq)=='number' and type(m.data)=='table' then
-        local reply={seq=m.seq,session=m.session}
-        if not cfg.allowed[tostring(id)] then
-          reply.error='Worker '..id..' is not paired. Run allow '..id..' on controller.'
-        elseif m.kind=='heartbeat' then
-          -- Heartbeats reuse a sentinel sequence and must never be response-cached.
-          pcall(handle,id,m)
-          reply=nil
-        else
-          local key=tostring(id)..':'..tostring(m.session)..':'..tostring(m.seq)
-          if responses[key] then reply=responses[key]
-          else
-            local ok,data,err=pcall(handle,id,m)
-            if ok then reply.data=data;reply.error=err else reply.error=tostring(data) end
-            responses[key]=reply
-            local keysCount=0;for _ in pairs(responses) do keysCount=keysCount+1 end
-            if keysCount>100 then responses={[key]=reply} end
-          end
-        end
-        if reply then rednet.send(id,reply,protocol) end
-      end
-    end
-  end
+  local mailbox=Mailbox.new({protocol=protocol,allowed=cfg.allowed,handle=handle,performance=performance})
+  local function networkLoop() mailbox:receive() end
+  local function requestLoop() mailbox:work() end
   local function scanLoop()
     while true do
       if U.now()>=scanAt and not scanBusy then
@@ -1164,6 +1158,7 @@ function Controller.run(cfg)
         scanAt=U.now()+cfg.scanInterval;scanBusy=false
       end
       if U.now()-lastSave>60 then save() end
+      if U.now()-profileSaved>30 then S.save('farm/data/performance',{since=performance.since,untilTime=U.now(),samples=performance.samples,expanded=performance.expanded});profileSaved=U.now() end
       sleep(1)
     end
   end
@@ -1213,7 +1208,9 @@ function Controller.run(cfg)
       local model=displayModel();dashboardError=nil
       for _,name in ipairs(names) do
         if peripheral.hasType(name,'monitor') then
+          local started=U.now()
           local ok,err=pcall(function() dashboard:draw(peripheral.wrap(name),name,model) end)
+          performance:record('draw',started)
           if not ok then dashboardError=tostring(err) end
         end
       end
@@ -1328,7 +1325,7 @@ function Controller.run(cfg)
       else print('No command called '..cmd..'. Type help for the list.') end
     end
   end
-  parallel.waitForAny(networkLoop,discoverLoop,scanLoop,displayLoop,playerLoop,consoleLoop,touchLoop,stopLoop)
+  parallel.waitForAny(networkLoop,discoverLoop,scanLoop,displayLoop,playerLoop,consoleLoop,touchLoop,stopLoop,requestLoop)
 end
 return Controller
 ]=],
@@ -2201,6 +2198,48 @@ function F:flush(mon,previous)
 end
 return F
 ]=],
+["farm/lib/fuel.lua"] = [=[
+-- SPDX-License-Identifier: GPL-3.0-only
+-- Copyright (C) 2026 boredhero
+local F={values={['minecraft:coal']=80,['minecraft:charcoal']=80,['minecraft:coal_block']=800}}
+function F.target() return math.min(8000,turtle.getFuelLimit and turtle.getFuelLimit() or 20000) end
+function F.reserve()
+  local n=0;for slot=1,16 do local item=turtle.getItemDetail(slot);if item and F.values[item.name] then n=n+item.count end end
+  return n
+end
+function F.refuel()
+  local level=turtle.getFuelLevel();if level=='unlimited' then return end
+  for slot=1,16 do
+    local item=turtle.getItemDetail(slot);level=turtle.getFuelLevel()
+    if level>=F.target() then return end
+    if item and F.values[item.name] then
+      turtle.select(slot);turtle.refuel(math.min(item.count,math.ceil((F.target()-level)/F.values[item.name])))
+    end
+  end
+end
+function F.needed()
+  local level=turtle.getFuelLevel()
+  return level~='unlimited' and (level<F.target() or F.reserve()<64)
+end
+function F.fill(side)
+  for _=1,3 do
+    if not F.needed() then return end
+    local slot
+    for i=1,16 do
+      local item=turtle.getItemDetail(i)
+      if item and F.values[item.name] and item.count<64 then slot=i;break end
+      if not item and not slot then slot=i end
+    end
+    if not slot then return end
+    turtle.select(slot)
+    if not turtle['suck'..side](64-turtle.getItemCount(slot)) then return end
+    local item=turtle.getItemDetail(slot)
+    if item and not F.values[item.name] then turtle['drop'..side]();return end
+    F.refuel()
+  end
+end
+return F
+]=],
 ["farm/lib/garden.lua"] = [=[
 -- SPDX-License-Identifier: GPL-3.0-only
 -- Copyright (C) 2026 boredhero
@@ -2245,23 +2284,32 @@ function G:scan(world,jobs,started,now,custom)
   end
   for k,j in pairs(jobs) do if not self.data.plots[k] then self:observe(j,now) end end
 end
+function G:counts()
+  local living,debts={},{}
+  for _,p in pairs(self.data.plots) do
+    local seed=p.job.seed
+    if seed then
+      if p.live and not p.intent then living[seed]=(living[seed] or 0)+1 end
+      if p.debt then debts[seed]=(debts[seed] or 0)+1 end
+    end
+  end
+  return living,debts
+end
 function G:living(seed)
-  local count=0
-  for _,p in pairs(self.data.plots) do if p.live and p.job.seed==seed and not p.intent then count=count+1 end end
-  return count
+  local living=self:counts();return living[seed] or 0
 end
 function G:debts(seed)
-  local count=0
-  for _,p in pairs(self.data.plots) do if p.debt and (not seed or p.job.seed==seed) then count=count+1 end end
-  return count
+  local _,debts=self:counts()
+  if seed then return debts[seed] or 0 end
+  local count=0;for _,n in pairs(debts) do count=count+n end;return count
 end
 function G:reserves(batch)
-  local keep={}
+  local keep={};local living=self:counts()
   for _,p in pairs(self.data.plots) do
     local j=p.job;local item=j.seed or j.item
     if item then
       if (j.crop or j.name)==batch then keep[item]=4
-      elseif p.debt or (p.live and j.seed and not j.guaranteedSeed and self:living(item)<=1) then
+      elseif p.debt or (p.live and j.seed and not j.guaranteedSeed and (living[item] or 0)<=1) then
         keep[item]=math.max(keep[item] or 0,1)
       end
     end
@@ -2317,7 +2365,7 @@ function G:finish(job,token,after,world,custom,now)
   return true
 end
 function G:tasks(inventory,stock,now,dryRun)
-  local tasks={};inventory=inventory or {};stock=stock or {}
+  local tasks={};inventory=inventory or {};stock=stock or {};local living=self:counts()
   for _,p in pairs(self.data.plots) do
     if not p.intent or p.intent.expires<=now then
       local j={};for k,v in pairs(p.job) do j[k]=v end
@@ -2328,7 +2376,7 @@ function G:tasks(inventory,stock,now,dryRun)
         end
       elseif p.live then
         local available=(inventory[j.seed] or 0)>0
-        local allowed=dryRun or self:canHarvest(j,available)
+        local allowed=dryRun or not j.seed or available or j.guaranteedSeed or (living[j.seed] or 0)>1
         if not allowed and (stock[j.seed] or 0)>0 then allowed=true;j.fetchSeed=true end
         if allowed then tasks[#tasks+1]=j end
       end
@@ -2586,6 +2634,122 @@ function Help.lines(word)
 end
 return Help
 ]=],
+["farm/lib/journal.lua"] = [=[
+-- SPDX-License-Identifier: GPL-3.0-only
+-- Copyright (C) 2026 boredhero
+-- Small atomic mutation records between full snapshots; retain the records needed by the backup snapshot.
+local S=require('farm.lib.store')
+local U=require('farm.lib.util')
+local J={};J.__index=J
+function J.apply(state,r)
+  if type(r)~='table' or type(r.seq)~='number' or r.seq<=(state.journalSeq or 0) then return end
+  state.garden=state.garden or {plots={}};state.garden.plots=state.garden.plots or {};state.history=state.history or {}
+  for _,key in ipairs({'batches','metrics','growth'}) do state[key]=r[key] end
+  state.garden.seeds=r.seeds;state.garden.serial=r.serial
+  if r.key then state.garden.plots[r.key]=r.plot or nil;state.history[r.key]=r.history or nil end
+  state.journalSeq=r.seq
+end
+function J.new(path,state)
+  local self=setmetatable({path=path,dir=path..'-journal',state=state,checkpointSeq=state.journalSeq or 0},J)
+  if fs.exists(self.dir) then
+    local files={};for _,name in ipairs(fs.list(self.dir)) do if name:match('^%d+$') then files[#files+1]=tonumber(name) end end
+    table.sort(files)
+    for _,seq in ipairs(files) do if seq>(state.journalSeq or 0) then
+      local r=S.load(self.dir..'/'..seq,nil);assert(r and r.seq==seq,'Invalid controller journal record '..seq)
+      J.apply(state,r)
+    end end
+  end
+  return self
+end
+function J:locked(fn)
+  while self.busy do os.pullEvent('farmbot_journal_unlock') end
+  self.busy=true;local ok,err=pcall(fn);self.busy=false;os.queueEvent('farmbot_journal_unlock')
+  if not ok then error(err,0) end
+end
+function J:record(job)
+  self:locked(function()
+    local s=self.state;local key=job and job.key;local seq=(s.journalSeq or 0)+1
+    S.save(self.dir..'/'..seq,{seq=seq,batches=s.batches,metrics=s.metrics,growth=s.growth,
+      serial=s.garden.serial,seeds=s.garden.seeds,key=key,
+      plot=key and s.garden.plots[key] or false,history=key and s.history[key] or false})
+    s.journalSeq=seq
+  end)
+end
+function J:checkpoint()
+  self:locked(function()
+    S.save(self.path,self.state)
+    if fs.exists(self.dir) then for _,name in ipairs(fs.list(self.dir)) do
+      local seq=tonumber(name:match('^(%d+)'))
+      if seq and seq<=self.checkpointSeq then fs.delete(self.dir..'/'..name) end
+    end end
+    self.checkpointSeq=self.state.journalSeq or 0
+  end)
+end
+return J
+]=],
+["farm/lib/mailbox.lua"] = [=[
+-- SPDX-License-Identifier: GPL-3.0-only
+-- Copyright (C) 2026 boredhero
+local U=require('farm.lib.util')
+local M={};M.__index=M
+local serial=0
+local fast={step=true,status=true,control=true}
+function M.new(opts)
+  serial=serial+1
+  return setmetatable({protocol=opts.protocol,allowed=opts.allowed,handle=opts.handle,performance=opts.performance,
+    event='farmbot_mailbox_'..serial,queue={},head=1,tail=0,pending={},responses={},order={},first=1,last=0},M)
+end
+function M:reply(id,m,key)
+  local started=U.now();local ok,data,err=pcall(self.handle,id,m)
+  if self.performance then self.performance:record('rpc_'..m.kind,started) end
+  local reply={seq=m.seq,session=m.session}
+  if ok then reply.data=data;reply.error=err else reply.error=tostring(data) end
+  self.responses[key]=reply;self.last=self.last+1;self.order[self.last]=key
+  if self.last-self.first>=512 then
+    self.responses[self.order[self.first]]=nil;self.order[self.first]=nil;self.first=self.first+1
+  end
+  if self.first>512 then
+    local order={};for i=self.first,self.last do order[#order+1]=self.order[i] end
+    self.order=order;self.first=1;self.last=#order
+  end
+  self.pending[key]=nil
+  rednet.send(id,reply,self.protocol)
+end
+function M:receive()
+  while true do
+    local id,m=rednet.receive(self.protocol)
+    if type(m)=='table' and m.v==1 and type(m.seq)=='number' and type(m.kind)=='string' and type(m.data)=='table' then
+      if not self.allowed[tostring(id)] then
+        rednet.send(id,{seq=m.seq,session=m.session,error='Worker '..id..' is not paired. Run allow '..id..' on controller.'},self.protocol)
+      elseif m.kind=='heartbeat' then pcall(self.handle,id,m)
+      else
+        local key=tostring(id)..':'..tostring(m.session)..':'..tostring(m.seq)
+        if self.responses[key] then rednet.send(id,self.responses[key],self.protocol)
+        elseif not self.pending[key] then
+          self.pending[key]=true
+          if fast[m.kind] then self:reply(id,m,key)
+          else
+            local empty=self.head>self.tail
+            self.tail=self.tail+1;self.queue[self.tail]={id=id,message=m,key=key}
+            if empty then os.queueEvent(self.event) end
+          end
+        end
+      end
+    end
+  end
+end
+function M:work()
+  while true do
+    while self.head<=self.tail do
+      local item=self.queue[self.head];self.queue[self.head]=nil;self.head=self.head+1
+      self:reply(item.id,item.message,item.key)
+    end
+    self.queue={};self.head=1;self.tail=0
+    os.pullEvent(self.event)
+  end
+end
+return M
+]=],
 ["farm/lib/metrics.lua"] = [=[
 -- SPDX-License-Identifier: GPL-3.0-only
 -- Copyright (C) 2026 boredhero
@@ -2686,7 +2850,7 @@ function N.client(cfg)
     local message={v=1,seq=seq,kind=kind,data=data or {},session=cfg.session}
     for attempt=1,4 do
       rednet.send(cfg.controller,message,N.protocol(cfg))
-      local deadline=U.now()+12
+      local deadline=U.now()+(kind=='step' and 0.5 or 1)
       repeat
         local id,reply=rednet.receive(N.protocol(cfg),math.max(0,deadline-U.now()))
         if id==cfg.controller and type(reply)=='table' and reply.seq==seq and reply.session==cfg.session then
@@ -2695,7 +2859,8 @@ function N.client(cfg)
         end
       until U.now()>=deadline
     end
-    local ok,found=pcall(N.discover,2)
+    if kind=='step' then return nil,'Controller did not answer movement permission within 2 seconds' end
+    local ok,found=pcall(N.discover,1)
     return nil,'Controller not responding. '..((ok and N.mismatch(cfg,found)) or
       'Check the controller is running farm start and both have Ender Modems.')
   end
@@ -2732,28 +2897,47 @@ local function pop(h)
 end
 function P.find(world,start,goals,opts)
   opts=opts or {}
-  if not world:inside(start) then return nil,'Start outside scanner coverage' end
-  local targets,valid={},{}
-  local function blocked(p)
-    return world:blocked(p) or (opts.avoid and opts.avoid[U.key(p)])
+  if not world:inside(start) then return nil,'Start outside scanner coverage',0 end
+  local n=world.n;local plane=n*n;local floor,abs=math.floor,math.abs
+  local masks={1,2,4,8,16,32,64,128};local avoid={}
+  -- Convert traffic once, rather than allocating six positions and string keys
+  -- for every expanded voxel. Only reconstruct positions for the final route.
+  for key,value in pairs(opts.avoid or {}) do if value then
+    local x,y,z=key:match('^([^,]+),([^,]+),([^,]+)$')
+    x,y,z=tonumber(x),tonumber(y),tonumber(z)
+    if x and y and z then
+      local id=world:index({x=x,y=y,z=z});if id then avoid[id]=true end
+    end
+  end end
+  local function blocked(id)
+    return avoid[id] or floor(world.packed:byte(floor(id/8)+1)/masks[id%8+1])%2==1
   end
+  local source=world:index(start);local targets,valid={},{}
   for _,g in ipairs(goals) do
-    if world:inside(g) and (U.equal(g,start) or not blocked(g)) then
-      targets[world:index(g)]=g; valid[#valid+1]=g
+    local id=world:index(g)
+    if id and (id==source or not blocked(id)) then
+      targets[id]=g;valid[#valid+1]={x=g.x-world.min.x,y=g.y-world.min.y,z=g.z-world.min.z}
     end
   end
-  if #valid==0 then return nil,'No accessible approach cell' end
-  local function heuristic(p)
+  if #valid==0 then return nil,'No accessible approach cell',0 end
+  local function heuristic(x,y,z)
     local best=math.huge
-    for _,g in ipairs(valid) do best=math.min(best,U.distance(p,g)) end
+    for i=1,#valid do local g=valid[i];local distance=abs(x-g.x)+abs(y-g.y)+abs(z-g.z)
+      if distance<best then best=distance end
+    end
     return best
   end
-  local source=world:index(start)
   local heap,dist,parents={}, {[source]=0},{}
-  push(heap,{id=source,g=0,f=heuristic(start)})
-  local expanded=0
+  push(heap,{id=source,g=0,f=heuristic(start.x-world.min.x,start.y-world.min.y,start.z-world.min.z)})
+  local expanded=0;local current,score
+  local function visit(id,x,y,z)
+    if (not dist[id] or score<dist[id]) and not blocked(id) then
+      dist[id]=score;parents[id]=current.id
+      push(heap,{id=id,g=score,f=score+heuristic(x,y,z)})
+    end
+  end
   while #heap>0 do
-    local current=pop(heap)
+    current=pop(heap)
     if current.g==dist[current.id] then
       if targets[current.id] then
         local path,at={},current.id
@@ -2763,23 +2947,21 @@ function P.find(world,start,goals,opts)
         return ordered,targets[current.id],expanded
       end
       expanded=expanded+1
-      if expanded>(opts.limit or 60000) then return nil,'Search budget reached' end
+      if expanded>(opts.limit or 60000) then return nil,'Search budget reached',expanded end
       if opts.yieldFn and expanded%1000==0 then opts.yieldFn() end
-      local pos=world:position(current.id)
-      for _,d in ipairs(U.dirs) do
-        local nextPos=U.add(pos,d);local id=world:index(nextPos)
-        if id and not blocked(nextPos) then
-          local score=current.g+1
-          if not dist[id] or score<dist[id] then
-            dist[id]=score;parents[id]=current.id
-            push(heap,{id=id,g=score,f=score+heuristic(nextPos)})
-          end
-        end
-      end
+      local id=current.id;local x=id%n;local z=floor(id/n)%n;local y=floor(id/plane)
+      score=current.g+1
+      if z>0 then visit(id-n,x,y,z-1) end
+      if x<n-1 then visit(id+1,x+1,y,z) end
+      if z<n-1 then visit(id+n,x,y,z+1) end
+      if x>0 then visit(id-1,x-1,y,z) end
+      if y<n-1 then visit(id+plane,x,y+1,z) end
+      if y>0 then visit(id-plane,x,y-1,z) end
     end
   end
-  return nil,'No route in surveyed space'
+  return nil,'No route in surveyed space',expanded
 end
+
 function P.valid(world,start,path,avoid)
   local prev=start
   for _,p in ipairs(path) do
@@ -2787,6 +2969,19 @@ function P.valid(world,start,path,avoid)
     prev=p
   end
   return true
+end
+return P
+]=],
+["farm/lib/performance.lua"] = [=[
+-- SPDX-License-Identifier: GPL-3.0-only
+-- Copyright (C) 2026 boredhero
+local U=require('farm.lib.util')
+local P={};P.__index=P
+function P.new() return setmetatable({since=U.now(),samples={}},P) end
+function P:record(name,started)
+  local ms=math.max(0,(U.now()-started)*1000)
+  local r=self.samples[name] or {count=0,totalMs=0,maxMs=0};self.samples[name]=r
+  r.count=r.count+1;r.totalMs=r.totalMs+ms;r.maxMs=math.max(r.maxMs,ms);r.lastMs=ms
 end
 return P
 ]=],
@@ -3023,6 +3218,44 @@ function S.save(path,data)
 end
 return S
 ]=],
+["farm/lib/traffic.lua"] = [=[
+-- SPDX-License-Identifier: GPL-3.0-only
+-- Copyright (C) 2026 boredhero
+local U=require('farm.lib.util')
+local T={}
+function T.turtle(name) return name=='computercraft:turtle_normal' or name=='computercraft:turtle_advanced' end
+function T.update(worker,pos,now)
+  worker.pos=pos
+  if worker.nextPos and (U.equal(pos,worker.nextPos) or (worker.nextUntil or 0)<=now) then worker.nextPos=nil end
+end
+function T.claim(workers,id,pos,target,now)
+  if not pos or not target or U.distance(pos,target)~=1 then return {ok=false,reason='Invalid traffic step'} end
+  for other,w in pairs(workers) do if other~=id and now-(w.seen or 0)<10 then
+    if (w.pos and U.equal(w.pos,target)) or (w.nextPos and (w.nextUntil or 0)>now and U.equal(w.nextPos,target)) then
+      return {ok=false,worker=other,reason='Waiting for worker #'..other}
+    end
+  end end
+  local w=workers[id];w.nextPos=U.copy(target);w.nextUntil=now+3
+  return {ok=true}
+end
+function T.avoid(workers,id,now,planned)
+  local avoid={}
+  for other,w in pairs(workers) do if other~=id then
+    if w.dock then avoid[U.key(w.dock)]=true end
+    if now-(w.seen or 0)<10 then
+      if w.pos then avoid[U.key(w.pos)]=true end
+      if w.nextPos and (w.nextUntil or 0)>now then avoid[U.key(w.nextPos)]=true end
+      if planned and w.route and w.pos then
+        local at=w.routeStart and U.equal(w.routeStart,w.pos) and 0 or nil
+        for i,p in ipairs(w.route) do if U.equal(p,w.pos) then at=i end end
+        if at then for i=at+1,math.min(at+3,#w.route) do avoid[U.key(w.route[i])]=true end end
+      end
+    end
+  end end
+  return avoid
+end
+return T
+]=],
 ["farm/lib/util.lua"] = [=[
 -- SPDX-License-Identifier: GPL-3.0-only
 -- Copyright (C) 2026 boredhero
@@ -3053,7 +3286,12 @@ function U.openModem()
   end
   error('Attach an Ender Modem to this computer/turtle.',0)
 end
-function U.yield() sleep(0) end
+local yieldSerial=0
+function U.yield()
+  yieldSerial=yieldSerial+1;local token=yieldSerial
+  os.queueEvent('farmbot_yield',token)
+  repeat local _,seen=os.pullEvent('farmbot_yield') until seen==token
+end
 return U
 ]=],
 ["farm/lib/vines.lua"] = [=[
@@ -3441,6 +3679,8 @@ local Compost=require('farm.lib.compost')
 local Pickup=require('farm.lib.pickup')
 local Soil=require('farm.lib.soil')
 local Vines=require('farm.lib.vines')
+local Traffic=require('farm.lib.traffic')
+local Fuel=require('farm.lib.fuel')
 local Worker={}
 function Worker.inventory()
   local counts={}
@@ -3450,13 +3690,8 @@ function Worker.inventory()
   end
   return counts
 end
-local fuelItems={['minecraft:coal']=true,['minecraft:charcoal']=true,['minecraft:coal_block']=true}
-function Worker.refuel()
-  for slot=1,16 do
-    local item=turtle.getItemDetail(slot)
-    if item and fuelItems[item.name] then turtle.select(slot);turtle.refuel() end
-  end
-end
+local fuelItems=Fuel.values
+Worker.refuel=Fuel.refuel
 function Worker.compact()
   Worker.refuel()
   for source=2,16 do
@@ -3512,16 +3747,17 @@ function Worker.run(cfg)
   cfg.session=tostring(os.getComputerID())..':'..tostring(os.epoch('utc'))
   local request=N.client(cfg)
   local saved=S.load('farm/data/worker',{pending=nil})
+  if saved.commissioned==nil and ((saved.stations and saved.stations.output) or saved.pickupBatch) then saved.commissioned=true end
   saved.stats=saved.stats or {steps=0}
   Worker.refuel()
   local pos,heading=Worker.calibrate()
   local status='Starting';local active=false
   local pickupCells=saved.pickupCells or {};saved.pickupCells=pickupCells
   local pickupBatch=saved.pickupBatch
-  local function checkpoint() saved.pos=pos;saved.heading=heading;S.save('farm/data/worker',saved) end
+  local function checkpoint() saved.pos=pos;saved.heading=heading;saved.fuel=turtle.getFuelLevel();saved.status=status;S.save('farm/data/worker',saved) end
   local function rpc(kind,data)
     data=data or {};data.pos=U.copy(pos);data.fuel=turtle.getFuelLevel();data.status=status
-    data.inventory=Worker.inventory()
+    if kind~='step' then data.inventory=Worker.inventory() end
     data.dryRun=cfg.dryRun;data.stats=saved.stats
     return request(kind,data)
   end
@@ -3545,7 +3781,8 @@ function Worker.run(cfg)
     local ok,b=turtle['inspect'..side]()
     return ok and b or nil,side
   end
-  local function follow(path,homing)
+  local trail={}
+  local function follow(path,homing,retreat)
     for i,nextPos in ipairs(path) do
       if U.distance(pos,nextPos)~=1 then return false,'Invalid route step' end
       if i%8==1 then
@@ -3554,11 +3791,21 @@ function Worker.run(cfg)
         active=reply.active
         if not active and not homing then return false,'paused' end
       end
+      local permit
+      for attempt=1,3 do
+        permit=rpc('step',{target=nextPos})
+        if not permit or permit.ok then break end
+        status=permit and permit.reason or 'Waiting for traffic controller';sleep(0.2+os.getComputerID()%4*0.05)
+      end
+      if not permit or not permit.ok then
+        return false,permit and permit.reason or 'Traffic controller unavailable',
+          {pos=U.copy(nextPos),name='computercraft:turtle_advanced',traffic=true,peer=permit and permit.worker}
+      end
       local side=direction(nextPos)
       local found,block=turtle['inspect'..side]()
       if found then
         rpc('blocked',{block=nextPos,name=block.name})
-        return false,'Blocked at '..U.key(nextPos)..' by '..tostring(block.name),{pos=U.copy(nextPos),name=block.name}
+        return false,'Blocked at '..U.key(nextPos)..' by '..tostring(block.name),{pos=U.copy(nextPos),name=block.name,traffic=Traffic.turtle(block.name)}
       end
       if not cfg.dryRun then Pickup.collect(side) end
       local move=side=='Up' and turtle.up or side=='Down' and turtle.down or turtle.forward
@@ -3567,6 +3814,7 @@ function Worker.run(cfg)
         rpc('blocked',{block=nextPos})
         return false,'Movement failed at '..U.key(nextPos)..': '..tostring(err or 'unknown obstacle')
       end
+      if not retreat then trail[#trail+1]=U.copy(pos);if #trail>12 then table.remove(trail,1) end end
       pos=U.copy(nextPos);saved.stats.steps=saved.stats.steps+1
       if not cfg.dryRun then Pickup.collect('Down');pickupCells[U.key(pos)]=nil end
       -- Save at route boundaries; GPS supplies actual position after a crash.
@@ -3592,7 +3840,13 @@ function Worker.run(cfg)
       local route,err
       if attempt==1 and initialPath then route={path=initialPath}
       else route,err=rpc('route',{goals=goals}) end
-      if not route then lastError=tostring(err);status='Route: '..lastError;sleep(3)
+      if not route then
+        lastError=tostring(err);status='Route: '..lastError
+        local back=trail[#trail]
+        if attempt>1 and back and U.distance(pos,back)==1 then
+          if follow({back},true,true) then table.remove(trail) end
+        end
+        sleep(0.5+os.getComputerID()%4*0.1)
       else
         local fuel=turtle.getFuelLevel()
         if fuel~='unlimited' then
@@ -3607,6 +3861,13 @@ function Worker.run(cfg)
         local ok,reason,obstacle=follow(route.path,homing)
         if ok then return true end
         if reason=='paused' then return false,reason end
+        if obstacle and obstacle.traffic and (not obstacle.peer or os.getComputerID()>tonumber(obstacle.peer)) then
+          local back=trail[#trail]
+          if back and U.distance(pos,back)==1 then
+            local yielded=follow({back},true,true)
+            if yielded then table.remove(trail);status='Yielding to another worker' end
+          end
+        end
         if column and obstacle and Vines.allowed(column,obstacle.pos,{name=obstacle.name}) and not cfg.dryRun then
           local cleared,why=clearVine(column,obstacle.pos)
           if not cleared then return false,why end
@@ -3709,7 +3970,7 @@ function Worker.run(cfg)
     Worker.refuel()
     local plan,planError=rpc('seed_plan')
     if not plan then return false,planError end
-    local kept,types={},0
+    local kept,types={},0;local fuelKept=0
     local bank=cfg.seedBuffer and cfg.seedBuffer~=''
     if bank then
       local exists,seedBlock=turtle.inspectDown()
@@ -3722,6 +3983,9 @@ function Worker.run(cfg)
         turtle.select(slot)
         if Soil.isHoe(turtle.getItemDetail(slot,true)) then
           -- Keep carried recovery tools; never export them as stray harvest drops.
+        elseif fuelItems[item.name] and turtle.getFuelLevel()~='unlimited' then
+          local keep=math.min(item.count,math.max(0,64-fuelKept));fuelKept=fuelKept+keep
+          if item.count>keep and (not turtle['drop'..outputSide](item.count-keep) or turtle.getItemCount(slot)~=keep) then return false,'Output chest full' end
         elseif plan.seeds[item.name] then
           -- Batch supplies plus essential replant items; export unrelated reserves.
           local limit=plan.keep and (plan.keep[item.name] or 0) or 4
@@ -3747,18 +4011,16 @@ function Worker.run(cfg)
     local empty
     for slot=1,16 do if turtle.getItemCount(slot)==0 then empty=slot;break end end
     if stations.fuel then
-      if empty then
+      if empty and Fuel.needed() then
         local ok,side=approach(stations.fuel,'fuel')
         if not ok then return false,side end
-        turtle.select(empty);turtle['suck'..side](64);Worker.refuel()
-        if turtle.getItemCount(empty)>0 then turtle.select(empty);turtle['drop'..side]() end
+        Fuel.fill(side)
       end
     else
       -- The dedicated chest ABOVE the docking cell supplies coal/charcoal only.
       local fuelFound,fuelBlock=turtle.inspectUp()
-      if fuelFound and fuelBlock.name==cfg.fuelBlock and empty then
-        turtle.select(empty);turtle.suckUp(64);Worker.refuel()
-        if turtle.getItemCount(empty)>0 then turtle.select(empty);turtle.dropUp() end
+      if fuelFound and fuelBlock.name==cfg.fuelBlock and empty and Fuel.needed() then
+        Fuel.fill('Up')
       end
     end
     local level=turtle.getFuelLevel()
@@ -3946,11 +4208,11 @@ function Worker.run(cfg)
     while true do
       rednet.send(cfg.controller,{v=1,seq=-1,session=cfg.session,kind='heartbeat',
         data={pos=pos,fuel=turtle.getFuelLevel(),status=status,stats=saved.stats}},N.protocol(cfg))
-      sleep(5)
+      sleep(1)
     end
   end
   local function work()
-    local needsDock='Startup'
+    local needsDock=saved.dockReason or (not saved.commissioned and 'Startup' or false)
     while true do
       if saved.crafting then
         local made,reason=craftSeed({seed=saved.crafting.seed})
@@ -3964,21 +4226,25 @@ function Worker.run(cfg)
         cfg.recoverAck=control.recover;S.save('farm/config',cfg)
         needsDock='Recovery requested';status='Recovery: returning to dock';print(status)
       end
-      if needsDock or freeSlots()==0 then
-        local ok,err=dock(needsDock or 'All 16 slots occupied')
+      if needsDock or freeSlots()<=1 then
+        saved.dockReason=needsDock or 'One empty inventory slot remaining';checkpoint()
+        local ok,err=dock(saved.dockReason)
         if not ok then status=tostring(err);print(status);sleep(10)
-        else needsDock=false end
+        else needsDock=false;saved.dockReason=nil;saved.commissioned=true;checkpoint() end
       else
-        local reply,err=rpc('job')
+        local reply,err=rpc('job',{resume=saved.assignment and saved.assignment.key})
         if not reply then status=tostring(err);sleep(10)
         elseif reply.mode=='live' or reply.mode=='dry' then
           cfg.dryRun=reply.mode=='dry';S.save('farm/config',cfg)
           status='Mode: '..reply.mode;print(status)
         elseif not reply.job then
           status=reply.reason or 'Waiting'
-          if not U.equal(pos,cfg.dock) then needsDock=reply.reason or 'No available work' else sleep(reply.wait or 10) end
+          local fuel=turtle.getFuelLevel()
+          if reply.returnHome and not U.equal(pos,cfg.dock) then needsDock=reply.reason or 'Paused'
+          elseif fuel~='unlimited' and fuel<cfg.fuelReserve*2 then needsDock='Low fuel reserve'
+          else sleep(reply.wait or 3) end
         else
-          local job=reply.job
+          local job=reply.job;saved.assignment={key=job.key,crop=job.crop or job.name};checkpoint()
           local swept=false
           if pickupBatch and pickupBatch~=(job.crop or job.name) then swept=sweepDrops() end
           pickupBatch=job.crop or job.name;saved.pickupBatch=pickupBatch
@@ -3997,8 +4263,9 @@ function Worker.run(cfg)
           local home,homeError=request('route',{pos=reply.goal,goals={cfg.dock},preview=true})
           local fuel=turtle.getFuelLevel()
           if not reply.path or not home or (fuel~='unlimited' and fuel<#reply.path+#home.path+cfg.fuelReserve) then
-            rpc('release');needsDock=not reply.path and 'Job route unavailable' or not home and 'Return route unavailable' or 'Fuel reserve for next job'
-            if not home then status=tostring(homeError);sleep(5) end
+            rpc('release')
+            if reply.path and home then needsDock='Fuel reserve for next job'
+            else status=not home and tostring(homeError) or 'Waiting for a route';sleep(1) end
           else
             status=(cfg.dryRun and 'Inspecting ' or 'Farming ')..job.name
             local reached,why=navigate(Vines.goals(job),false,reply.path,job)
@@ -4018,11 +4285,11 @@ function Worker.run(cfg)
                 detail=detail,state=blockState,after=after})
               assert(recorded,recordError) -- Never discard an unacknowledged harvest journal.
               if outcome=='harvested' then Pickup.add(pickupCells,job);Pickup.collect('Down') end
-              saved.pending=nil;checkpoint()
+              saved.pending=nil;saved.assignment=nil;checkpoint()
               if outcome=='error' then status=detail;print(detail);sleep(10) end
             else
               rpc('result',{job=job,token=reply.token,outcome='unreachable',detail=why})
-              needsDock='Job travel failed: '..tostring(why)
+              status='Waiting after route failure: '..tostring(why);sleep(1)
             end
           end
           end
@@ -4052,7 +4319,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.4.3\", \"ref\": \"v0.4.3\"}\
+["farm/version.json"] = "{\"version\": \"0.5.0\", \"ref\": \"v0.5.0\"}\
 ",
 }
 local args={...}

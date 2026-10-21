@@ -20,7 +20,7 @@ local function run(options)
   if options.station then grid[U.key(options.station)]={name='minecraft:chest'} end
   for k,b in pairs(options.grid or {}) do grid[k]=clone(b) end
   local inv=clone(options.inventory or {});local saved=clone(options.saved or {})
-  local results,events={},{};local nextJob=0;local moveCalls=0;local modeSent,configSaved
+  local results,events={},{};local seedPlans=0;local nextJob=0;local moveCalls=0;local modeSent,configSaved
   local function target(side)
     return U.add(position,U.dirs[side=='Down' and 6 or side=='Up' and 5 or heading])
   end
@@ -41,7 +41,7 @@ local function run(options)
       if inv[selected].count==0 then inv[selected]=nil end
       return true
     end,
-    select=function(i) selected=i;return true end,getFuelLevel=function() return 'unlimited' end,
+    select=function(i) selected=i;return true end,getFuelLevel=function() return options.fuel or 'unlimited' end,
     refuel=function() return false end,
     turnLeft=function() heading=((heading-2)%4)+1;return true end,
     turnRight=function() heading=heading%4+1;return true end}
@@ -110,9 +110,10 @@ local function run(options)
   N.client=function()
     return function(kind,data)
       if kind=='craft_station' then return nil,'No available Crafter in scanner coverage' end
+      if kind=='step' then return {ok=true} end
       if kind=='control' then return options.recover and {recover=1} or {} end
       if kind=='hello' then return {active=true} end
-      if kind=='seed_plan' then return options.seedPlan or {seeds={['minecraft:wheat_seeds']=true},needed={}} end
+      if kind=='seed_plan' then seedPlans=seedPlans+1;if options.stopAfterDock and seedPlans==3 then error(stop) end;return options.seedPlan or {seeds={['minecraft:wheat_seeds']=true},needed={}} end
       if kind=='status' then return {active=not options.paused} end
       if kind=='route' then
         if options.noReplan and data.goals[1].x==1 and not data.preview then return nil,'No accessible approach cell' end
@@ -127,9 +128,11 @@ local function run(options)
         return {ok=true}
       end
       if kind=='job' then
+        if options.expectedResume then eq(data.resume,options.expectedResume) end
         if options.mode and not modeSent then modeSent=true;return {mode=options.mode} end
         if options.mode then eq(data.dryRun,options.mode=='dry') end
         nextJob=nextJob+1;local j=options.jobs[nextJob];if not j then error(stop) end
+        if j.wait then return {wait=0,reason='Waiting for next crop',returnHome=j.returnHome} end
         j=clone(j);local goal=U.add(j.vines and j.vines[1] or j.pos,U.dirs[5])
         if options.soil then grid[U.key(U.add(j.pos,U.dirs[6]))]={name=options.soil} end
         if not j.repair then grid[j.key]={name=j.name,state={age=7}} end
@@ -138,7 +141,9 @@ local function run(options)
       end
       if kind=='result' then
         if options.loseResult then return nil,'simulated controller disconnection' end
-        results[#results+1]=clone(data);if options.stopAfterResult then error(stop) end;return {ok=true}
+        results[#results+1]=clone(data)
+        if options.fillAfterResult then for slot=3,15 do inv[slot]={name='test:junk_'..slot,count=1} end end
+        if options.stopAfterResult then error(stop) end;return {ok=true}
       end
       if kind=='release' then return {ok=true} end
       error('Unexpected RPC: '..kind)
@@ -149,7 +154,7 @@ local function run(options)
   if options.station then cfg.stations={output=options.station,fuel=options.station} end
   local ok,err=pcall(Worker.run,cfg)
   assert(not ok and (err==stop or options.loseResult),tostring(err))
-  return {results=results,events=events,saved=saved,grid=grid,inventory=inv,moves=moveCalls,config=configSaved}
+  return {results=results,events=events,saved=saved,grid=grid,inventory=inv,moves=moveCalls,config=configSaved,seedPlans=seedPlans}
 end
 local function crop(x,repair)
   return {pos={x=x,y=0,z=0},key=x..',0,0',name='minecraft:wheat',age=7,
@@ -196,7 +201,7 @@ local tests={
  {'output and fuel stations work from all six sides, including returning unwanted fuel items',function()
    for i=1,6 do
      local station=U.add({x=0,y=1,z=0},U.dirs[i])
-     local r=run({jobs={},station=station,inventory={[1]={name='minecraft:wheat',count=2}}})
+     local r=run({jobs={},station=station,fuel=9000,inventory={[1]={name='minecraft:wheat',count=2}}})
      local side=i==5 and 'Up' or i==6 and 'Down' or ''
      eq(r.events[1],'drop'..side);eq(r.events[2],'suck'..side);eq(r.events[3],'drop'..side)
      eq(r.inventory[1],nil)
@@ -268,4 +273,19 @@ do
   local dry=run({jobs={j},grid=grid,dryRun=true,stopAfterResult=true,inventory={[1]={name='minecraft:wheat_seeds',count=3}}})
   for _,event in ipairs(dry.events) do assert(not event:find('dig:',1,true)) end
   print('PASS worker clears bounded hanging vines top-down, repairs invaded gap and preserves all vines in dry mode')
+end
+
+do
+  local r=run({jobs={crop(2),{wait=true},crop(3)},inventory={[1]={name='minecraft:wheat_seeds',count=4}}})
+  eq(#r.results,2);eq(r.seedPlans,2);assert(r.saved.commissioned)
+  local full=run({jobs={crop(2)},fillAfterResult=true,stopAfterDock=true,inventory={[1]={name='minecraft:wheat_seeds',count=4}}})
+  eq(full.seedPlans,3)
+  local restart=run({jobs={},saved={commissioned=true}});eq(restart.seedPlans,0)
+  print('PASS idle crop transitions retain harvest, fifteen occupied slots trigger unload, and commissioned restarts skip unnecessary docking')
+end
+
+do
+  local r=run({jobs={crop(2)},stopAfterResult=true,expectedResume='2,0,0',saved={commissioned=true,assignment={key='2,0,0'},pickupBatch='minecraft:wheat'},inventory={[1]={name='minecraft:wheat_seeds',count=3}}})
+  eq(r.seedPlans,0);eq(r.results[1].outcome,'harvested')
+  print('PASS restarted worker requests unfinished assignment from actual GPS position without returning home')
 end

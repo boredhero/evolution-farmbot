@@ -29,4 +29,11 @@ lua tests/dashboard.lua
 lua tests/lifetime.lua
 lua tests/soil.lua
 lua tests/vines.lua
+lua tests/journal.lua
+lua tests/traffic.lua
+lua tests/scaling.lua
+lua tests/path_scaling.lua
+lua tests/mailbox.lua
+lua tests/fuel.lua
+lua tests/retries.lua
 lua tests/updater.lua
