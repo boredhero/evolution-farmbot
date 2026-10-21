@@ -61,3 +61,21 @@ w:ingest({{x=0,y=0,z=0,name='test:loamy_dirt',tags={'minecraft:dirt'}},
 assert(C.candidate(w,{x=0,y=1,z=0,name='biomeswevegone:blueberry_bush'}))
 assert(not C.farmland({name='test:decoration',tags={['minecraft:maintains_farmland']=true}}))
 print('PASS modded farmland and dirt use semantic soil tags, not unrelated crop-support tags')
+
+w=W.new({x=0,y=0,z=0},8)
+-- Match the AP 0.8 scan captured on the live server, including registry-qualified tags.
+for _,tags in ipairs({{['minecraft:block/c:sands']=true},{['minecraft:block/minecraft:sand']=true},
+ {'minecraft:block/c:sands'},{['c:sands']=true}}) do
+ w:ingest({{x=0,y=0,z=0,name='biomeswevegone:windswept_sand',tags=tags},
+ {x=0,y=1,z=0,name='minecraft:cactus'},{x=0,y=2,z=0,name='minecraft:cactus'},
+ {x=0,y=3,z=0,name='minecraft:cactus'}})
+ local jobs=C.discover(w);local j=jobs['0,3,0']
+ assert(j and j.rootY==1 and j.onlyAbove and not jobs['0,1,0'] and not jobs['0,2,0'])
+ local route,goal=P.find(w,{x=3,y=4,z=0},C.goals(j))
+ assert(route and goal.x==0 and goal.y==4 and goal.z==0)
+end
+assert(C.dirt({name='test:dirt',tags={['minecraft:block/minecraft:dirt']=true}}))
+assert(C.farmland({name='test:farmland',tags={['minecraft:block/c:farmlands']=true}}))
+assert(not C.tag({['minecraft:item/c:sands']=true},'c:sands'))
+assert(not C.tag({['minecraft:block/c:sands']=false},'c:sands'))
+print('PASS actual AP registry-qualified sand tags discover tall cactus with reachable top-only access; soil tags and ordinary turtle tags remain compatible')

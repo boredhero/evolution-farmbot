@@ -1,4 +1,4 @@
 {
-  "version": "0.5.3",
-  "notes": "Harvest blocked same-crop neighbors through a freshly harvested gap before replanting both plants; preserve torches and durable recovery for both planting obligations."
+  "version": "0.5.4",
+  "notes": "Recognize Advanced Peripherals registry-qualified block tags as well as ordinary turtle tags; fixes cactus and other crops on tagged modded sand, dirt and farmland."
 }

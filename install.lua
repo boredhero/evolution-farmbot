@@ -2047,8 +2047,10 @@ function C.rule(name,custom)
   end
 end
 function C.tag(tags,name)
-  if tags[name] then return true end
-  for _,tag in ipairs(tags) do if tag==name then return true end end
+  -- AP 0.8 includes the registry in holder tag keys; turtle.inspect does not.
+  local qualified='minecraft:block/'..name
+  if tags[name] or tags[qualified] then return true end
+  for _,tag in ipairs(tags) do if tag==name or tag==qualified then return true end end
   return false
 end
 local function tagged(block,names)
@@ -4480,7 +4482,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.5.3\", \"ref\": \"v0.5.3\"}\
+["farm/version.json"] = "{\"version\": \"0.5.4\", \"ref\": \"v0.5.4\"}\
 ",
 }
 local args={...}

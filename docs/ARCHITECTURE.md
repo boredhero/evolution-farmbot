@@ -347,3 +347,5 @@ Pathfinding uses numeric voxel indices and cooperative queued-event yields, not 
 Surveyed connectivity is cached independently of worker traffic. Identical scans retain it; occupancy changes invalidate it. Completed components reject unreachable destinations before repeated A* searches. Slow routes retain bounded diagnostics for live profiling.
 
 Crops below torches can be reached through a freshly harvested neighboring crop: the worker steps into that gap, inspects and harvests the blocked same-crop neighbor, then retreats and replants the gap. Both planting obligations are durable. This requires a single-block replant crop in the same unfinished round and two carried planting items; it does not remove torches, uproot immature neighbors, or take another worker's crop round.
+
+Block tag lookup accepts both normal identifiers (c:sands) and Advanced Peripherals 0.8 registry-qualified identifiers (minecraft:block/c:sands), in list or boolean-map form. This is shared by sand, dirt, farmland, crop and interaction checks.

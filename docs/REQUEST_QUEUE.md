@@ -46,3 +46,5 @@ Requests 26-29 also include durable assignment resume across restarts, removal o
 2026-10-21 verification: v0.5.0 published and deployed before Minecraft restart; service resumed with computer_threads=2. Four workers resumed in the farm. v0.5.1 public installer and deployed file hashes verified. First minute: job assignment max28ms, movement permission max1ms, mutation journal max6ms; startup route max1103ms, routes in the second 30-second sample averaged18ms. Sixteen-worker simulations pass; live fleet has four workers.
 
 Follow-up evidence after v0.5.3 deployment: live routes to shared docks can still hit the 60,000-node limit twice (soft/hard traffic), taking roughly 3 seconds. Fast movement replies remain responsive. Keep this routing follow-up open; the earlier short sample did not cover these crowded-dock cases.
+
+31. Cactus on BWG windswept sand: live scanner uses minecraft:block/c:sands and minecraft:block/minecraft:sand. Shared tag lookup now accepts registry-qualified AP tags and normal turtle tags. Release v0.5.4 pending deployment verification.

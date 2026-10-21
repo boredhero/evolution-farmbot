@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "version": "0.5.3",
-  "ref": "v0.5.3",
-  "notes": "Harvest blocked same-crop neighbors through a freshly harvested gap before replanting both plants; preserve torches and durable recovery for both planting obligations.",
+  "version": "0.5.4",
+  "ref": "v0.5.4",
+  "notes": "Recognize Advanced Peripherals registry-qualified block tags as well as ordinary turtle tags; fixes cactus and other crops on tagged modded sand, dirt and farmland.",
   "files": [
     {"path": "LICENSE", "size": 35149, "adler32": "f70779ec"},
     {"path": "NOTICE", "size": 691, "adler32": "ad64ed8d"},
@@ -16,7 +16,7 @@
     {"path": "farm/lib/compost.lua", "size": 2713, "adler32": "243c8801"},
     {"path": "farm/lib/crafting.lua", "size": 2603, "adler32": "b6787b5e"},
     {"path": "farm/lib/crop_access.lua", "size": 1050, "adler32": "d2b55d14"},
-    {"path": "farm/lib/crops.lua", "size": 10766, "adler32": "e05fae43"},
+    {"path": "farm/lib/crops.lua", "size": 10925, "adler32": "54eae5ba"},
     {"path": "farm/lib/frame.lua", "size": 1586, "adler32": "7ea305ba"},
     {"path": "farm/lib/fuel.lua", "size": 1528, "adler32": "1eecfdfb"},
     {"path": "farm/lib/garden.lua", "size": 5909, "adler32": "6ff4d2c1"},
