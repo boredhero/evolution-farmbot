@@ -47,4 +47,4 @@ Requests 26-29 also include durable assignment resume across restarts, removal o
 
 Follow-up evidence after v0.5.3 deployment: live routes to shared docks can still hit the 60,000-node limit twice (soft/hard traffic), taking roughly 3 seconds. Fast movement replies remain responsive. Keep this routing follow-up open; the earlier short sample did not cover these crowded-dock cases.
 
-31. Cactus on BWG windswept sand: live scanner uses minecraft:block/c:sands and minecraft:block/minecraft:sand. Shared tag lookup now accepts registry-qualified AP tags and normal turtle tags. Release v0.5.4 pending deployment verification.
+31. Cactus on BWG windswept sand: live scanner uses minecraft:block/c:sands and minecraft:block/minecraft:sand. Shared tag lookup now accepts registry-qualified AP tags and normal turtle tags. Deployed v0.5.4 to 4/8/9/10/21; public main/tag installer and all runtime hashes verified. Live controller now discovers all seven cactus columns at Y=68 with roots Y=66; harvest awaits normal round rotation. Full suite passes, including regression against the actual scanner tag format.
