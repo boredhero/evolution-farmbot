@@ -60,4 +60,4 @@ Follow-up evidence after v0.5.3 deployment: live routes to shared docks can stil
 
 37. Place carried Actually Additions worms on farm soil, trying other plots on refusal: bounded saved attempts in freshly harvested planting gaps, retain16.
 38. Use compost-produced/carried bone meal for the current assigned crop: up to4 uses with observed growth checks, retain64.
-39. Separate fleet Settings toggles for both growth tools, default on; preserve explicit off and dry mode. Deployed v0.6.3 to 4/8/9/10/21; full suite and all public/runtime hash checks pass. Live controller confirms both toggles true and cache512; fleet running. Live item-use observation pending suitable carried supplies/crops.
+39. Separate fleet Settings toggles for both growth tools, default on; preserve explicit off and dry mode. Deployed v0.6.3 to 4/8/9/10/21; full suite and all public/runtime hash checks pass. Live controller confirms both toggles true and cache512; fleet running. Live workers9 and21 each confirmed one bone-meal use. Worm placement still awaits a carried worm at a suitable harvest gap.
