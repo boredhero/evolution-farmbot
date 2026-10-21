@@ -94,3 +94,15 @@ for _,name in ipairs({'biomeswevegone:pale_pumpkin_stem','biomeswevegone:attache
 end
 assert(not crop('biomeswevegone:carved_pale_pumpkin'))
 print('PASS pale pumpkin fruit is harvestable without replanting; growing/attached stems and carved decorations are preserved')
+
+for height=1,3 do
+ local scan={{x=0,y=0,z=0,name='biomeswevegone:windswept_sand',tags={['minecraft:block/c:sands']=true}}}
+ for y=1,height do scan[#scan+1]={x=0,y=y,z=0,name='minecraft:cactus'} end
+ scan[#scan+1]={x=0,y=height+1,z=0,name='minecraft:cactus_flower'};w:ingest(scan)
+ local jobs=C.discover(w);local j=jobs['0,'..(height+1)..',0'];local n=0;for _ in pairs(jobs)do n=n+1 end
+ assert(n==1 and j and j.crop=='minecraft:cactus' and j.columnName=='minecraft:cactus' and j.rootY==1)
+ assert(j.roundKey=='0,1,0' and C.ready(j,{name='minecraft:cactus_flower'}))
+ local path,goal=P.find(w,{x=3,y=height+2,z=0},C.goals(j));assert(path and goal.y==height+2)
+end
+assert(not crop('minecraft:cactus_flower','minecraft:sand'),'do not harvest unsupported decorative flowers')
+print('PASS cactus flowers share the cactus round, expose an above-flower approach and preserve single-block roots on tagged sand')

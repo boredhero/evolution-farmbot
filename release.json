@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "version": "0.6.7",
-  "ref": "v0.6.7",
-  "notes": "Bound request queues with retryable backpressure, release detached monitor caches, and enforce surplus-seed-only composter interactions.",
+  "version": "0.6.8",
+  "ref": "v0.6.8",
+  "notes": "Harvest cactus flowers first, then upper cactus blocks, preserving roots and shared cactus rounds even when flowers grow after scanning.",
   "files": [
     {"path": "LICENSE", "size": 35149, "adler32": "f70779ec"},
     {"path": "NOTICE", "size": 691, "adler32": "ad64ed8d"},
@@ -18,7 +18,7 @@
     {"path": "farm/lib/compost.lua", "size": 3220, "adler32": "e33237d4"},
     {"path": "farm/lib/crafting.lua", "size": 2603, "adler32": "b6787b5e"},
     {"path": "farm/lib/crop_access.lua", "size": 1050, "adler32": "d2b55d14"},
-    {"path": "farm/lib/crops.lua", "size": 10966, "adler32": "8b86f4f2"},
+    {"path": "farm/lib/crops.lua", "size": 11207, "adler32": "e1254cfe"},
     {"path": "farm/lib/frame.lua", "size": 1586, "adler32": "7ea305ba"},
     {"path": "farm/lib/fuel.lua", "size": 1528, "adler32": "1eecfdfb"},
     {"path": "farm/lib/garden.lua", "size": 5909, "adler32": "6ff4d2c1"},
@@ -32,7 +32,7 @@
     {"path": "farm/lib/network.lua", "size": 3027, "adler32": "7c73f6c3"},
     {"path": "farm/lib/path.lua", "size": 5590, "adler32": "b99c22cf"},
     {"path": "farm/lib/performance.lua", "size": 456, "adler32": "09c29bde"},
-    {"path": "farm/lib/pickup.lua", "size": 1336, "adler32": "bac5d181"},
+    {"path": "farm/lib/pickup.lua", "size": 1369, "adler32": "281ede14"},
     {"path": "farm/lib/players.lua", "size": 2586, "adler32": "62117f4b"},
     {"path": "farm/lib/route_cache.lua", "size": 1035, "adler32": "c1665ecc"},
     {"path": "farm/lib/seed_recipes.lua", "size": 1230, "adler32": "fb37bfa4"},
@@ -45,7 +45,7 @@
     {"path": "farm/lib/world.lua", "size": 4929, "adler32": "7d2e7d87"},
     {"path": "farm/setup.lua", "size": 5760, "adler32": "d9249f38"},
     {"path": "farm/updater.lua", "size": 8484, "adler32": "75871ef3"},
-    {"path": "farm/worker.lua", "size": 33887, "adler32": "579c9175"},
+    {"path": "farm/worker.lua", "size": 34180, "adler32": "0f50f266"},
     {"path": "startup.lua", "size": 351, "adler32": "e5a976c1"},
     {"path": "update.lua", "size": 197, "adler32": "b1644169"}
   ]

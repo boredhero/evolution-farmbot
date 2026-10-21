@@ -3,7 +3,7 @@
 local C=require('farm.lib.crops')
 local U=require('farm.lib.util')
 local P={}
-local plants={['minecraft:sugar_cane']=true,['minecraft:cactus']=true,['minecraft:cocoa']=true,
+local plants={['minecraft:cactus_flower']=true,['minecraft:sugar_cane']=true,['minecraft:cactus']=true,['minecraft:cocoa']=true,
  ['minecraft:melon']=true,['minecraft:pumpkin']=true,['immersiveengineering:hemp']=true,
  ['farmersdelight:rice']=true,['farmersdelight:rice_panicles']=true,
  ['biomeswevegone:aloe_vera']=true,['biomeswevegone:blooming_aloe_vera']=true,

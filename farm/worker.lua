@@ -206,8 +206,12 @@ function Worker.run(cfg)
           local cleared,why=clearVine(column,obstacle.pos)
           if not cleared then return false,why end
         end
-        if column and column.mode=='cane' and obstacle and obstacle.name==column.name
+        if column and column.mode=='cane' and obstacle and (obstacle.name==column.name
+          or (column.name=='minecraft:cactus' and obstacle.name=='minecraft:cactus_flower'))
           and obstacle.pos.x==column.pos.x and obstacle.pos.z==column.pos.z and obstacle.pos.y>column.pos.y then
+          if obstacle.name=='minecraft:cactus_flower' then
+            column.columnName='minecraft:cactus';column.crop='minecraft:cactus';column.name=obstacle.name
+          end
           column.pos=U.copy(obstacle.pos);goals=C.goals(column)
         end
         lastError=tostring(reason);lastObstacle=lastError
@@ -528,7 +532,7 @@ function Worker.run(cfg)
         local reached,why=follow({U.add(target,U.dirs[5])},true)
         if not reached then return 'error',why end
         local nextBlock,nextSide=inspect(target)
-        if not nextBlock or nextBlock.name~=job.name then break end
+        if not nextBlock or nextBlock.name~=(job.columnName or job.name) then break end
         local dug,why=turtle['dig'..nextSide]()
         if not dug then return 'error',why end
       end

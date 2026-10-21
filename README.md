@@ -40,7 +40,7 @@ numbered walkthrough from crafting the parts to the first harvest.
 
 Supported crops include vanilla farmland crops, all normally named Mystical Agriculture crops,
 Farmer's Delight, Actually Additions, Immersive Engineering hemp, Cottonly, Hexerei sage, BWG
-blueberries, aloe vera, cocoa, sugar cane, melons, pumpkins (including BWG pale pumpkins), nether wart, cactus and kelp. Bamboo is left alone. See the
+blueberries, aloe vera, cocoa, sugar cane, melons, pumpkins (including BWG pale pumpkins), nether wart, cactus (including cactus flowers) and kelp. Bamboo is left alone. See the
 [full crop table](docs/ARCHITECTURE.md#crop-coverage). Crops it does not recognise are visited and
 inspected but never destroyed.
 

@@ -196,6 +196,22 @@ local function crop(x,repair)
     seed='minecraft:wheat_seeds',mode='replant',version=x,repair=repair}
 end
 local tests={
+ {'flowering cactus is harvested flower-first down to its root, including flowers grown since scanning',function()
+   for height=1,3 do for _,late in ipairs({false,true}) do
+     if not late or height>1 then
+       local grid={};for y=0,height-1 do grid['2,'..y..',0']={name='minecraft:cactus'} end
+       grid['2,'..height..',0']={name='minecraft:cactus_flower'}
+       local y=late and height-1 or height
+       local job={pos={x=2,y=y,z=0},key='2,'..y..',0',name=late and 'minecraft:cactus' or 'minecraft:cactus_flower',
+         crop='minecraft:cactus',columnName='minecraft:cactus',mode='cane',rootY=0,onlyAbove=true}
+       local r=run({jobs={job},grid=grid})
+       eq(r.results[1].outcome,'harvested');eq(r.grid['2,0,0'].name,'minecraft:cactus')
+       local digs={};for _,event in ipairs(r.events)do if event:match('^dig:')then digs[#digs+1]=event end end
+       eq(#digs,height);eq(digs[1],'dig:2,'..height..',0')
+       for h=1,height do eq(r.grid['2,'..h..',0'],nil) end
+     end
+   end end
+ end},
  {'sugar cane growing into the approach cell raises the target and clears the column without breaking its root',function()
    local name='minecraft:sugar_cane';local grid={}
    for y=0,2 do grid['2,'..y..',0']={name=name} end

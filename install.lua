@@ -2265,7 +2265,7 @@ function C.sand(world,pos)
     or tagged(b,{'minecraft:sand','c:sands','forge:sand','forge:sands'})) or false
 end
 function C.family(name)
-  local aliases={['farmersdelight:budding_tomatoes']='farmersdelight:tomatoes',
+  local aliases={['minecraft:cactus_flower']='minecraft:cactus',['farmersdelight:budding_tomatoes']='farmersdelight:tomatoes',
     ['farmersdelight:tomatoes_on_rope']='farmersdelight:tomatoes',
     ['biomeswevegone:blooming_aloe_vera']='biomeswevegone:aloe_vera',
     ['minecraft:torchflower_crop']='minecraft:torchflower'}
@@ -2327,13 +2327,14 @@ function C.candidate(world,b,custom)
     job.mode='upper';job.half='upper';return job
   elseif b.name=='minecraft:bamboo' or b.name=='minecraft:bamboo_sapling' then
     return nil
-  elseif b.name=='minecraft:cactus' then
-    if world:name(U.add(pos,U.dirs[5]))==b.name then return nil end
+  elseif b.name=='minecraft:cactus' or b.name=='minecraft:cactus_flower' then
+    local above=world:name(U.add(pos,U.dirs[5]))
+    if above=='minecraft:cactus' or above=='minecraft:cactus_flower' then return nil end
     local p=below;local height=0
-    while world:inside(p) and world:name(p)==b.name do height=height+1;p=U.add(p,U.dirs[6]) end
+    while world:inside(p) and world:name(p)=='minecraft:cactus' do height=height+1;p=U.add(p,U.dirs[6]) end
     local soil=world:name(p)
     if height>0 and C.sand(world,p) then
-      job.mode='cane';job.onlyAbove=true;job.rootY=p.y+1;job.roundKey=U.key({x=pos.x,y=job.rootY,z=pos.z})
+      job.mode='cane';job.columnName='minecraft:cactus';job.onlyAbove=true;job.rootY=p.y+1;job.roundKey=U.key({x=pos.x,y=job.rootY,z=pos.z})
       return job
     end
   elseif b.name=='minecraft:kelp' and world:name(below)=='minecraft:kelp_plant' then
@@ -2375,7 +2376,7 @@ function C.goals(job)
   return goals
 end
 function C.ready(job,block)
-  if job.name=='minecraft:cactus' and (not job.onlyAbove or not job.rootY or job.pos.y<=job.rootY) then return false,'protected' end
+  if (job.name=='minecraft:cactus' or job.name=='minecraft:cactus_flower') and (not job.onlyAbove or not job.rootY or job.pos.y<=job.rootY) then return false,'protected' end
   if not block or block.name~=job.name then return false,'changed' end
   if job.mode=='probe' then return false,'unsupported' end
   if job.mode=='growing' then return false,'growing' end
@@ -3342,7 +3343,7 @@ return P
 local C=require('farm.lib.crops')
 local U=require('farm.lib.util')
 local P={}
-local plants={['minecraft:sugar_cane']=true,['minecraft:cactus']=true,['minecraft:cocoa']=true,
+local plants={['minecraft:cactus_flower']=true,['minecraft:sugar_cane']=true,['minecraft:cactus']=true,['minecraft:cocoa']=true,
  ['minecraft:melon']=true,['minecraft:pumpkin']=true,['immersiveengineering:hemp']=true,
  ['farmersdelight:rice']=true,['farmersdelight:rice_panicles']=true,
  ['biomeswevegone:aloe_vera']=true,['biomeswevegone:blooming_aloe_vera']=true,
@@ -4296,8 +4297,12 @@ function Worker.run(cfg)
           local cleared,why=clearVine(column,obstacle.pos)
           if not cleared then return false,why end
         end
-        if column and column.mode=='cane' and obstacle and obstacle.name==column.name
+        if column and column.mode=='cane' and obstacle and (obstacle.name==column.name
+          or (column.name=='minecraft:cactus' and obstacle.name=='minecraft:cactus_flower'))
           and obstacle.pos.x==column.pos.x and obstacle.pos.z==column.pos.z and obstacle.pos.y>column.pos.y then
+          if obstacle.name=='minecraft:cactus_flower' then
+            column.columnName='minecraft:cactus';column.crop='minecraft:cactus';column.name=obstacle.name
+          end
           column.pos=U.copy(obstacle.pos);goals=C.goals(column)
         end
         lastError=tostring(reason);lastObstacle=lastError
@@ -4618,7 +4623,7 @@ function Worker.run(cfg)
         local reached,why=follow({U.add(target,U.dirs[5])},true)
         if not reached then return 'error',why end
         local nextBlock,nextSide=inspect(target)
-        if not nextBlock or nextBlock.name~=job.name then break end
+        if not nextBlock or nextBlock.name~=(job.columnName or job.name) then break end
         local dug,why=turtle['dig'..nextSide]()
         if not dug then return 'error',why end
       end
@@ -4804,7 +4809,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.6.7\", \"ref\": \"v0.6.7\"}\
+["farm/version.json"] = "{\"version\": \"0.6.8\", \"ref\": \"v0.6.8\"}\
 ",
 }
 local args={...}
