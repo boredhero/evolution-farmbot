@@ -5,9 +5,13 @@ local S=require('farm.lib.store')
 local Seeds=require('farm.lib.seeds')
 local function eq(a,b) assert(a==b,tostring(a)..' ~= '..tostring(b)) end
 local files,dirs={},{}
-local function serialize(v)
+local function serialize(v,opts,tracking)
+  opts=opts or {};tracking=tracking or {}
   if type(v)=='table' then
-    local parts={};for k,x in pairs(v) do parts[#parts+1]='['..serialize(k)..']='..serialize(x) end
+    if tracking[v]~=nil then error(tracking[v] and 'Cannot serialize table with recursive entries' or 'Cannot serialize table with repeated entries') end
+    tracking[v]=true
+    local parts={};for k,x in pairs(v) do parts[#parts+1]='['..serialize(k,opts,tracking)..']='..serialize(x,opts,tracking) end
+    if opts.allow_repetitions then tracking[v]=nil else tracking[v]=false end
     return '{'..table.concat(parts,',')..'}'
   elseif type(v)=='string' then return string.format('%q',v) end
   return tostring(v)
@@ -62,3 +66,16 @@ eq(files['farm/install-backups/12345/farm.lua'],'old program')
 eq(files['farm/install-backups/12345/startup.lua'],'old startup')
 assert(files['farm/lib/garden.lua']);assert(files['startup.lua']:find('farm.lua',1,true))
 print('PASS generated installer preserves configuration and backs up startup/programs')
+
+local job={key='2,0,0',pos={x=2,y=0,z=0},name='minecraft:wheat'}
+local parent={job=job,token='parent'}
+local shared={pending={job=job,token='parent'},accessPending=parent}
+assert(not pcall(serialize,shared,{compact=true}),'default CC serialization must reject the shared crop')
+S.save('farm/data/shared-worker',shared)
+local loaded=S.load('farm/data/shared-worker');eq(loaded.pending.job.key,job.key);eq(loaded.accessPending.job.key,job.key)
+shared.pending=parent;S.save('farm/data/shared-worker',shared)
+loaded=S.load('farm/data/shared-worker');eq(loaded.pending.token,'parent');eq(loaded.accessPending.token,'parent')
+local before=files['farm/data/shared-worker'];local cyclic={};cyclic.self=cyclic
+local ok,err=pcall(S.save,'farm/data/shared-worker',cyclic)
+assert(not ok and tostring(err):find('recursive entries') and files['farm/data/shared-worker']==before)
+print('PASS shared crop and recovery records serialize and round-trip; recursive structures still fail without changing the durable state')

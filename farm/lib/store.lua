@@ -16,7 +16,7 @@ function S.load(path,default)
 end
 function S.save(path,data)
   fs.makeDir(fs.getDir(path))
-  local raw=textutils.serialize(data,{compact=true})
+  local raw=textutils.serialize(data,{compact=true,allow_repetitions=true})
   local h,err=fs.open(path..'.new','w'); assert(h,err)
   h.write(raw); h.close()
   if fs.exists(path..'.bak') then fs.delete(path..'.bak') end

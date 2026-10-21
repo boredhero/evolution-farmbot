@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "version": "0.6.8",
-  "ref": "v0.6.8",
-  "notes": "Harvest cactus flowers first, then upper cactus blocks, preserving roots and shared cactus rounds even when flowers grow after scanning.",
+  "version": "0.6.9",
+  "ref": "v0.6.9",
+  "notes": "Allow shared nonrecursive tables in durable saves so nested crop-access recovery does not pause workers.",
   "files": [
     {"path": "LICENSE", "size": 35149, "adler32": "f70779ec"},
     {"path": "NOTICE", "size": 691, "adler32": "ad64ed8d"},
@@ -38,7 +38,7 @@
     {"path": "farm/lib/seed_recipes.lua", "size": 1230, "adler32": "fb37bfa4"},
     {"path": "farm/lib/seeds.lua", "size": 2619, "adler32": "9d299754"},
     {"path": "farm/lib/soil.lua", "size": 1684, "adler32": "27743abb"},
-    {"path": "farm/lib/store.lua", "size": 865, "adler32": "cd181fbd"},
+    {"path": "farm/lib/store.lua", "size": 888, "adler32": "0b60291a"},
     {"path": "farm/lib/traffic.lua", "size": 1603, "adler32": "28c81d85"},
     {"path": "farm/lib/util.lua", "size": 1465, "adler32": "840ae2de"},
     {"path": "farm/lib/vines.lua", "size": 776, "adler32": "17980435"},
