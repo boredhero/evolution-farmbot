@@ -6,6 +6,7 @@ local C=require('farm.lib.crops')
 local Growth=require('farm.lib.growth')
 local F=require('farm.lib.frame')
 local Compacting=require('farm.lib.compacting')
+local RouteCache=require('farm.lib.route_cache')
 local D={};D.__index=D
 function D.installedVersion()
   if not fs or not textutils then return 'unversioned' end
@@ -96,19 +97,27 @@ function D:render(m,v,w,h)
   local function bar(y) f:fill(1,y,w,1,' ','0','b');return 3 end
   if v.settings then
     local recipes=Compacting.recipes
-    v.setting=math.max(1,math.min(#recipes,v.setting or 1))
+    v.setting=math.max(1,math.min(#recipes+1,v.setting or 1))
     local selected=recipes[v.setting];local enabled=m.settings and m.settings.compacting or {}
     f:write(2,1,'FARMBOT / SETTINGS','0','b')
-    f:write(2,2,'Fleet-wide auto-compacting','0','b')
+    f:write(2,2,'Fleet-wide settings','0','b')
     local rows=math.max(1,hh-9);local first=math.max(1,v.setting-rows+1)
-    for i=first,math.min(#recipes,first+rows-1) do
-      local r=recipes[i];f:write(3,4+i-first,(i==v.setting and '> ' or '  ')..(enabled[r.key] and 'ON  ' or 'OFF ')..r.label,i==v.setting and '5' or '0')
+    for i=first,math.min(#recipes+1,first+rows-1) do
+      local r=recipes[i];local label=r and ((enabled[r.key] and 'ON  ' or 'OFF ')..r.label) or ('Route cache: '..RouteCache.limit(m.settings)..' routes')
+      f:write(3,4+i-first,(i==v.setting and '> ' or '  ')..label,i==v.setting and '5' or '0')
     end
+    if selected then
     f:write(3,hh-4,'Nine surplus items -> one block/crate','3')
     f:write(3,hh-3,'Planting stock is kept. Uses a Crafter.','8')
     f:write(3,hh-2,'Enable all nine slots; keep output clear.','8')
+    else
+      f:write(3,hh-4,'Keep '..RouteCache.limit(m.settings)..' routes | cached '..count(m.cache),'3')
+      f:write(3,hh-3,'32  64  128  256  512  1024','8')
+      f:write(3,hh-2,'Least recently used routes leave first.','8')
+    end
     local x=bar(h-1);x=button(f,hits,x,h-1,'[PREV]','setting',-1);x=button(f,hits,x,h-1,'[NEXT]','setting',1)
-    button(f,hits,x,h-1,enabled[selected.key] and '[TURN OFF]' or '[TURN ON]','compact',selected.key)
+    if selected then button(f,hits,x,h-1,enabled[selected.key] and '[TURN OFF]' or '[TURN ON]','compact',selected.key)
+    else x=button(f,hits,x,h-1,'[<]','routeLimit',-1);button(f,hits,x,h-1,'[>]','routeLimit',1) end
     x=bar(h);x=button(f,hits,x,h,'[MAP]','view','map');button(f,hits,x,h,'[LIVE]','view','stats')
     return f,hits
   end
@@ -364,7 +373,9 @@ function D:touch(name,x,y,m)
     if x>=hit.x and x<hit.x+hit.w and y>=hit.y and y<hit.y+hit.h then
       local action=hit.action
       if action=='select' then v.selected=hit.value
-      elseif action=='setting' then v.setting=((v.setting or 1)-1+hit.value)%#Compacting.recipes+1
+      elseif action=='setting' then v.setting=((v.setting or 1)-1+hit.value)%(#Compacting.recipes+1)+1
+      elseif action=='routeLimit' then
+        m.settings=m.settings or {};RouteCache.adjust(m.settings,hit.value)
       elseif action=='compact' then
         m.settings=m.settings or {};m.settings.compacting=m.settings.compacting or {}
         m.settings.compacting[hit.value]=not m.settings.compacting[hit.value]

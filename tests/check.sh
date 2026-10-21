@@ -36,6 +36,7 @@ lua tests/journal.lua
 lua tests/traffic.lua
 lua tests/scaling.lua
 lua tests/path_scaling.lua
+lua tests/route_cache.lua
 lua tests/path_components.lua
 lua tests/mailbox.lua
 lua tests/fuel.lua

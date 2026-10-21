@@ -1,4 +1,4 @@
 {
-  "version": "0.6.1",
-  "notes": "Retain 1024 validated routes instead of 128; keep the map route overlay bounded to 128 routes and 16000 points."
+  "version": "0.6.2",
+  "notes": "Settings menu route-cache arrows select 32,64,128,256,512 or 1024 routes; default512 with immediate least-recently-used eviction when lowering capacity. Recheck delayed replants before soil recovery."
 }

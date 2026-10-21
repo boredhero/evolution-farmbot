@@ -4,6 +4,7 @@ local U=require('farm.lib.util')
 local S=require('farm.lib.store')
 local W=require('farm.lib.world')
 local P=require('farm.lib.path')
+local RouteCache=require('farm.lib.route_cache')
 local C=require('farm.lib.crops')
 local N=require('farm.lib.network')
 local Seeds=require('farm.lib.seeds')
@@ -32,6 +33,7 @@ function Controller.run(cfg)
   local state=S.load('farm/data/controller',{active=false,history={},excluded={}})
   local journal=Journal.new('farm/data/controller',state)
   state.settings=state.settings or {};state.settings.compacting=state.settings.compacting or {}
+  state.settings.routeCacheLimit=RouteCache.limit(state.settings)
   state.history=state.history or {};state.excluded=state.excluded or {}
   state.batches=state.batches or {};state.growth=state.growth or {}
   if state.batches.schema~=2 then state.batches={schema=2} end
@@ -120,14 +122,7 @@ function Controller.run(cfg)
       if #recent>8 then table.remove(recent,1) end
     end
     if path then
-      if #parts>0 then
-        local count=0;for _ in pairs(cache) do count=count+1 end
-        if count>=1024 and not cache[key] then
-          local oldest,used;for k,r in pairs(cache) do if not used or (r.used or 0)<used then oldest,used=k,r.used or 0 end end
-          if oldest then cache[oldest]=nil end
-        end
-      end
-      cache[key]={path=path,goal=goal,used=U.now()};performance:record('route',started);return path,goal
+      cache[key]={path=path,goal=goal,used=U.now()};RouteCache.trim(cache,RouteCache.limit(state.settings));performance:record('route',started);return path,goal
     end
     performance:record('route_failed',started);return nil,goal
   end
@@ -469,7 +464,7 @@ function Controller.run(cfg)
   local function touchLoop()
     while true do
       local _,name,x,y=os.pullEvent('monitor_touch')
-      if dashboard:touch(name,x,y,displayModel()) then save() end
+      if dashboard:touch(name,x,y,displayModel()) then RouteCache.trim(cache,RouteCache.limit(state.settings));save() end
     end
   end
   local function drainReason()

@@ -424,17 +424,25 @@ function Worker.run(cfg)
       if saved.crafting then return false,reason end
     end
     if not slot then return false,'deferred' end
+    local function expected(block) return block and (block.name==job.name or block.name==job.plantedName) end
     local function plant()
-      if inspect(job.pos) then return false,'New occupant preserved' end
+      local existing=inspect(job.pos)
+      if expected(existing) then return true end
+      if existing then return false,'occupied' end
       slot=getSlot(job.seed);if not slot then return false,'No planting item after recovery' end
       turtle.select(slot)
       local ok,err=turtle['place'..side]()
       local planted=inspect(job.pos)
-      if planted and (planted.name==job.name or planted.name==job.plantedName) then return true end
+      if expected(planted) then return true end
       return false,'Replant verification at '..U.key(job.pos)..': expected '..tostring(job.plantedName or job.name)
         ..', found '..(planted and planted.name or 'air')..(not ok and ' ('..tostring(err)..')' or '')
     end
     local ok,err=plant()
+    if not ok then
+      local latest=inspect(job.pos)
+      if expected(latest) then return true end
+      if latest then return false,'occupied' end
+    end
     if not ok and C.needsFarmland(job,cfg.customCrops) then
       local function probe()
         if inspect(job.pos) then return nil,'Crop cell occupied; soil left unchanged' end
@@ -450,6 +458,9 @@ function Worker.run(cfg)
         if inspect(job.pos) then return false,'Crop cell is now occupied' end
         return turtle['place'..side]()
       end)
+      local latest=inspect(job.pos)
+      if expected(latest) then return true end
+      if latest then return false,'occupied' end
       if restored then ok,err=plant() else err=err..'; '..tostring(why) end
     end
     if not ok then return false,err end

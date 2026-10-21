@@ -18,6 +18,7 @@ local CompactCraft=require('farm.lib.compact_crafting')
 local compactRun=CompactCraft.run
 local function run(options)
   local position={x=0,y=1,z=0};local heading=1;local selected=1
+  local hiddenPlant
   local grid={['0,1,-1']={name='minecraft:chest'},['0,2,0']={name='minecraft:chest'}}
   if options.station then grid[U.key(options.station)]={name='minecraft:chest'} end
   for k,b in pairs(options.grid or {}) do grid[k]=clone(b) end
@@ -49,7 +50,10 @@ local function run(options)
     turnLeft=function() heading=((heading-2)%4)+1;return true end,
     turnRight=function() heading=heading%4+1;return true end}
   for _,side in ipairs({'','Up','Down'}) do
-    turtle['inspect'..side]=function() local b=grid[U.key(target(side))];return b~=nil,clone(b) end
+    turtle['inspect'..side]=function()
+      local key=U.key(target(side));if hiddenPlant==key then hiddenPlant=nil;return false end
+      local b=grid[key];return b~=nil,clone(b)
+    end
     turtle['dig'..side]=function()
       local k=U.key(target(side));local b=grid[k]
       assert(b and b.name~='minecraft:stone' and b.name~='minecraft:chest','Tried to dig non-crop!')
@@ -69,7 +73,9 @@ local function run(options)
       if options.soil and grid[below] and grid[below].name~='minecraft:farmland' then return false,'Invalid soil' end
       assert(inv[selected] and inv[selected].name=='minecraft:wheat_seeds')
       inv[selected].count=inv[selected].count-1;if inv[selected].count==0 then inv[selected]=nil end
-      grid[k]={name='minecraft:wheat',state={age=0}};events[#events+1]='plant:'..k;return true
+      grid[k]={name=options.lateForeign and 'farmersdelight:onions' or 'minecraft:wheat',state={age=0}}
+      if options.latePlant or options.lateForeign then hiddenPlant=k end
+      events[#events+1]='plant:'..k;return true
     end
     turtle['suck'..side]=function()
       if options.station and U.key(target(side))==U.key(options.station) then
@@ -337,4 +343,13 @@ do
  seedPlan={seeds={},needed={},keep={},compacting={{key='wheat',item='minecraft:wheat',output='minecraft:hay_block',inputCount=9,count=1,batches=2}}}})
  for _,event in ipairs(dry.events) do assert(event~='compact') end
  print('PASS worker compacts through the shared Crafter before unloading output and leftovers, clears recovery journal and honors dry mode')
+end
+
+do
+ local opts={jobs={crop(2)},latePlant=true,inventory={[1]={name='minecraft:wheat_seeds',count=3}}}
+ local r=run(opts);eq(r.results[1].outcome,'harvested');eq(r.grid['2,0,0'].name,'minecraft:wheat');eq(r.saved.pending,nil)
+ for _,event in ipairs(r.events) do assert(not event:find('till:',1,true)) end
+ opts.latePlant=nil;opts.lateForeign=true
+ local foreign=run(opts);eq(foreign.results[1].outcome,'occupied');eq(foreign.grid['2,0,0'].name,'farmersdelight:onions')
+ print('PASS delayed replant visibility is accepted before soil recovery; unexpected occupants are preserved without a false soil error')
 end

@@ -781,6 +781,7 @@ local U=require('farm.lib.util')
 local S=require('farm.lib.store')
 local W=require('farm.lib.world')
 local P=require('farm.lib.path')
+local RouteCache=require('farm.lib.route_cache')
 local C=require('farm.lib.crops')
 local N=require('farm.lib.network')
 local Seeds=require('farm.lib.seeds')
@@ -809,6 +810,7 @@ function Controller.run(cfg)
   local state=S.load('farm/data/controller',{active=false,history={},excluded={}})
   local journal=Journal.new('farm/data/controller',state)
   state.settings=state.settings or {};state.settings.compacting=state.settings.compacting or {}
+  state.settings.routeCacheLimit=RouteCache.limit(state.settings)
   state.history=state.history or {};state.excluded=state.excluded or {}
   state.batches=state.batches or {};state.growth=state.growth or {}
   if state.batches.schema~=2 then state.batches={schema=2} end
@@ -897,14 +899,7 @@ function Controller.run(cfg)
       if #recent>8 then table.remove(recent,1) end
     end
     if path then
-      if #parts>0 then
-        local count=0;for _ in pairs(cache) do count=count+1 end
-        if count>=1024 and not cache[key] then
-          local oldest,used;for k,r in pairs(cache) do if not used or (r.used or 0)<used then oldest,used=k,r.used or 0 end end
-          if oldest then cache[oldest]=nil end
-        end
-      end
-      cache[key]={path=path,goal=goal,used=U.now()};performance:record('route',started);return path,goal
+      cache[key]={path=path,goal=goal,used=U.now()};RouteCache.trim(cache,RouteCache.limit(state.settings));performance:record('route',started);return path,goal
     end
     performance:record('route_failed',started);return nil,goal
   end
@@ -1246,7 +1241,7 @@ function Controller.run(cfg)
   local function touchLoop()
     while true do
       local _,name,x,y=os.pullEvent('monitor_touch')
-      if dashboard:touch(name,x,y,displayModel()) then save() end
+      if dashboard:touch(name,x,y,displayModel()) then RouteCache.trim(cache,RouteCache.limit(state.settings));save() end
     end
   end
   local function drainReason()
@@ -1363,6 +1358,7 @@ local C=require('farm.lib.crops')
 local Growth=require('farm.lib.growth')
 local F=require('farm.lib.frame')
 local Compacting=require('farm.lib.compacting')
+local RouteCache=require('farm.lib.route_cache')
 local D={};D.__index=D
 function D.installedVersion()
   if not fs or not textutils then return 'unversioned' end
@@ -1453,19 +1449,27 @@ function D:render(m,v,w,h)
   local function bar(y) f:fill(1,y,w,1,' ','0','b');return 3 end
   if v.settings then
     local recipes=Compacting.recipes
-    v.setting=math.max(1,math.min(#recipes,v.setting or 1))
+    v.setting=math.max(1,math.min(#recipes+1,v.setting or 1))
     local selected=recipes[v.setting];local enabled=m.settings and m.settings.compacting or {}
     f:write(2,1,'FARMBOT / SETTINGS','0','b')
-    f:write(2,2,'Fleet-wide auto-compacting','0','b')
+    f:write(2,2,'Fleet-wide settings','0','b')
     local rows=math.max(1,hh-9);local first=math.max(1,v.setting-rows+1)
-    for i=first,math.min(#recipes,first+rows-1) do
-      local r=recipes[i];f:write(3,4+i-first,(i==v.setting and '> ' or '  ')..(enabled[r.key] and 'ON  ' or 'OFF ')..r.label,i==v.setting and '5' or '0')
+    for i=first,math.min(#recipes+1,first+rows-1) do
+      local r=recipes[i];local label=r and ((enabled[r.key] and 'ON  ' or 'OFF ')..r.label) or ('Route cache: '..RouteCache.limit(m.settings)..' routes')
+      f:write(3,4+i-first,(i==v.setting and '> ' or '  ')..label,i==v.setting and '5' or '0')
     end
+    if selected then
     f:write(3,hh-4,'Nine surplus items -> one block/crate','3')
     f:write(3,hh-3,'Planting stock is kept. Uses a Crafter.','8')
     f:write(3,hh-2,'Enable all nine slots; keep output clear.','8')
+    else
+      f:write(3,hh-4,'Keep '..RouteCache.limit(m.settings)..' routes | cached '..count(m.cache),'3')
+      f:write(3,hh-3,'32  64  128  256  512  1024','8')
+      f:write(3,hh-2,'Least recently used routes leave first.','8')
+    end
     local x=bar(h-1);x=button(f,hits,x,h-1,'[PREV]','setting',-1);x=button(f,hits,x,h-1,'[NEXT]','setting',1)
-    button(f,hits,x,h-1,enabled[selected.key] and '[TURN OFF]' or '[TURN ON]','compact',selected.key)
+    if selected then button(f,hits,x,h-1,enabled[selected.key] and '[TURN OFF]' or '[TURN ON]','compact',selected.key)
+    else x=button(f,hits,x,h-1,'[<]','routeLimit',-1);button(f,hits,x,h-1,'[>]','routeLimit',1) end
     x=bar(h);x=button(f,hits,x,h,'[MAP]','view','map');button(f,hits,x,h,'[LIVE]','view','stats')
     return f,hits
   end
@@ -1721,7 +1725,9 @@ function D:touch(name,x,y,m)
     if x>=hit.x and x<hit.x+hit.w and y>=hit.y and y<hit.y+hit.h then
       local action=hit.action
       if action=='select' then v.selected=hit.value
-      elseif action=='setting' then v.setting=((v.setting or 1)-1+hit.value)%#Compacting.recipes+1
+      elseif action=='setting' then v.setting=((v.setting or 1)-1+hit.value)%(#Compacting.recipes+1)+1
+      elseif action=='routeLimit' then
+        m.settings=m.settings or {};RouteCache.adjust(m.settings,hit.value)
       elseif action=='compact' then
         m.settings=m.settings or {};m.settings.compacting=m.settings.compacting or {}
         m.settings.compacting[hit.value]=not m.settings.compacting[hit.value]
@@ -3298,6 +3304,33 @@ function Players:poll(center,radius)
 end
 return Players
 ]=],
+["farm/lib/route_cache.lua"] = [=[
+-- SPDX-License-Identifier: GPL-3.0-only
+-- Copyright (C) 2026 boredhero
+local R={limits={32,64,128,256,512,1024},default=512}
+function R.limit(settings)
+  local value=settings and settings.routeCacheLimit
+  for _,n in ipairs(R.limits) do if n==value then return n end end
+  return R.default
+end
+function R.adjust(settings,delta)
+  local value=R.limit(settings);local at=1
+  for i,n in ipairs(R.limits) do if n==value then at=i;break end end
+  settings.routeCacheLimit=R.limits[math.max(1,math.min(#R.limits,at+delta))]
+end
+function R.trim(cache,limit)
+  local n,oldest,used=0
+  for key,r in pairs(cache) do
+    n=n+1;if not used or (r.used or 0)<used then oldest,used=key,r.used or 0 end
+  end
+  if n<=limit then return end
+  if n==limit+1 then cache[oldest]=nil;return end
+  local entries={};for key,r in pairs(cache) do entries[#entries+1]={key=key,used=r.used or 0} end
+  table.sort(entries,function(a,b) return a.used<b.used or (a.used==b.used and a.key<b.key) end)
+  for i=1,n-limit do cache[entries[i].key]=nil end
+end
+return R
+]=],
 ["farm/lib/seed_recipes.lua"] = [=[
 -- SPDX-License-Identifier: GPL-3.0-only
 -- Copyright (C) 2026 boredhero
@@ -4356,17 +4389,25 @@ function Worker.run(cfg)
       if saved.crafting then return false,reason end
     end
     if not slot then return false,'deferred' end
+    local function expected(block) return block and (block.name==job.name or block.name==job.plantedName) end
     local function plant()
-      if inspect(job.pos) then return false,'New occupant preserved' end
+      local existing=inspect(job.pos)
+      if expected(existing) then return true end
+      if existing then return false,'occupied' end
       slot=getSlot(job.seed);if not slot then return false,'No planting item after recovery' end
       turtle.select(slot)
       local ok,err=turtle['place'..side]()
       local planted=inspect(job.pos)
-      if planted and (planted.name==job.name or planted.name==job.plantedName) then return true end
+      if expected(planted) then return true end
       return false,'Replant verification at '..U.key(job.pos)..': expected '..tostring(job.plantedName or job.name)
         ..', found '..(planted and planted.name or 'air')..(not ok and ' ('..tostring(err)..')' or '')
     end
     local ok,err=plant()
+    if not ok then
+      local latest=inspect(job.pos)
+      if expected(latest) then return true end
+      if latest then return false,'occupied' end
+    end
     if not ok and C.needsFarmland(job,cfg.customCrops) then
       local function probe()
         if inspect(job.pos) then return nil,'Crop cell occupied; soil left unchanged' end
@@ -4382,6 +4423,9 @@ function Worker.run(cfg)
         if inspect(job.pos) then return false,'Crop cell is now occupied' end
         return turtle['place'..side]()
       end)
+      local latest=inspect(job.pos)
+      if expected(latest) then return true end
+      if latest then return false,'occupied' end
       if restored then ok,err=plant() else err=err..'; '..tostring(why) end
     end
     if not ok then return false,err end
@@ -4624,7 +4668,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.6.1\", \"ref\": \"v0.6.1\"}\
+["farm/version.json"] = "{\"version\": \"0.6.2\", \"ref\": \"v0.6.2\"}\
 ",
 }
 local args={...}

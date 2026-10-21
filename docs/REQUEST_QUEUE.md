@@ -53,3 +53,7 @@ Follow-up evidence after v0.5.3 deployment: live routes to shared docks can stil
 33. Additional Crafters automatically discovered and used: existing nearest-free station selection retained; all nine slots required for compacting.
 
 34. Increase route retention: 128 -> 1,024, retaining occupancy/traffic validation and least-recently-used eviction. Map preview bounded independently. Deployed v0.6.1 to 4/8/9/10/21; full suite passes; all runtime and public main/tag installer hashes verified. No Minecraft restart required.
+
+35. Route cache capacity in Settings: default512, arrows choose32/64/128/256/512/1024; decreasing capacity immediately trims least-recently-used entries. v0.6.2 testing/deployment in progress.
+
+36. Screenshot replant error at1780,81,3787: live correct certus crop and farmland confirmed, debt cleared; accept delayed correct replant observations before soil recovery and preserve unexpected occupants. Included in v0.6.2.
