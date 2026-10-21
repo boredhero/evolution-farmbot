@@ -2257,7 +2257,7 @@ function C.candidate(world,b,custom)
     if rule.immature then job.mode='growing' end
     job.guaranteedSeed=guaranteed[b.name] or b.name:match('^mysticalagriculture:.+_crop$')~=nil
     return job
-  elseif b.name=='minecraft:melon' or b.name=='minecraft:pumpkin' then
+  elseif b.name=='minecraft:melon' or b.name=='minecraft:pumpkin' or b.name=='biomeswevegone:pale_pumpkin' then
     job.mode='fruit';return job
   elseif b.name=='minecraft:cocoa' then
     job.mode='cocoa';job.age=2;job.seed='minecraft:cocoa_beans';job.guaranteedSeed=true;job.supports={}
@@ -4748,7 +4748,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.6.3\", \"ref\": \"v0.6.3\"}\
+["farm/version.json"] = "{\"version\": \"0.6.4\", \"ref\": \"v0.6.4\"}\
 ",
 }
 local args={...}

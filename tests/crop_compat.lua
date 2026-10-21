@@ -79,3 +79,18 @@ assert(C.farmland({name='test:farmland',tags={['minecraft:block/c:farmlands']=tr
 assert(not C.tag({['minecraft:item/c:sands']=true},'c:sands'))
 assert(not C.tag({['minecraft:block/c:sands']=false},'c:sands'))
 print('PASS actual AP registry-qualified sand tags discover tall cactus with reachable top-only access; soil tags and ordinary turtle tags remain compatible')
+
+for _,name in ipairs({'minecraft:melon','minecraft:pumpkin','biomeswevegone:pale_pumpkin'}) do
+ local j=crop(name,'minecraft:dirt')
+ assert(j and j.mode=='fruit' and not j.seed and j.crop==name)
+ assert(C.ready(j,{name=name}))
+ assert(not C.ready(j,{name='minecraft:air'}))
+end
+for _,name in ipairs({'biomeswevegone:pale_pumpkin_stem','biomeswevegone:attached_pale_pumpkin_stem',
+ 'minecraft:pumpkin_stem','minecraft:attached_pumpkin_stem'}) do
+ w:ingest({{x=0,y=0,z=0,name='minecraft:farmland'},
+ {x=0,y=1,z=0,name=name,tags={['minecraft:block/minecraft:crops']=true}}})
+ assert(not next(C.discover(w)),'preserve planted stem '..name)
+end
+assert(not crop('biomeswevegone:carved_pale_pumpkin'))
+print('PASS pale pumpkin fruit is harvestable without replanting; growing/attached stems and carved decorations are preserved')

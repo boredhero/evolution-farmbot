@@ -1,4 +1,4 @@
 {
-  "version": "0.6.3",
-  "notes": "Separate fleet toggles for automatic worm placement and current-crop bone meal; bounded attempts, planting-gap safety, retained supplies and dry-mode protection."
+  "version": "0.6.4",
+  "notes": "Harvest Biomes We Have Gone pale pumpkin fruit while preserving growing and attached stems."
 }

@@ -198,7 +198,7 @@ To generate local layout previews from the actual renderer with **simulated data
 | Vanilla sweet berries | Mature harvest/replant with berries |
 | Cocoa | Mature pods attached to jungle logs; attachment-aware placement |
 | Sugar cane | Clear every upper block in one visit, preserve one root; tagged sand/dirt and mud |
-| Melons and pumpkins | Harvest fruit blocks wherever present, as requested; stems remain untouched |
+| Melons and pumpkins (including BWG pale pumpkins) | Harvest fruit blocks wherever present, as requested; stems remain untouched |
 | Nether wart | Mature harvest/replant on soul sand |
 | Torchflower and pitcher crop | Recognize mature plants and planting items; need external sniffer seeds/pods for sustainable repeated harvesting |
 | Cactus | Clear every upper block from above, preserve root, accept tagged sand including BWG windswept sand |
