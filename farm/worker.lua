@@ -440,7 +440,7 @@ function Worker.run(cfg)
     if not ok then return false,err end
     return true
   end
-  local function harvest(job,token)
+  local function harvest(job,token,nested)
     local block,side=inspect(job.pos)
     if job.repair then
       if block then return 'occupied','Adopting the block already here',block.state end
@@ -497,6 +497,29 @@ function Worker.run(cfg)
         if not dug then return 'error',why end
       end
     end
+    if job.accessCandidates and not nested and job.seed and not inspect(job.pos) then
+      local origin=U.copy(pos);local parent={job=job,token=token}
+      for _=1,4 do
+        local access=rpc('access_job',parent)
+        if not access or not access.job then break end
+        saved.accessPending=parent;checkpoint()
+        local reached,why=follow({job.pos},true)
+        local outcome,detail,observed
+        if reached then outcome,detail,observed=harvest(access.job,access.token,true)
+        else outcome,detail='unreachable',why end
+        local after
+        if reached then after=inspect(access.job.pos) or false end
+        local recorded,reason=rpc('result',{job=access.job,token=access.token,outcome=outcome,detail=detail,state=observed,after=after})
+        assert(recorded,reason)
+        saved.pending=parent;checkpoint()
+        if reached then
+          local returned,err=follow({origin},true)
+          if not returned then error('Crop access return: '..tostring(err),0) end
+        end
+        saved.accessPending=nil;checkpoint()
+        if not reached then break end
+      end
+    end
     if job.seed then
       local replanted,replantError=finishReplant(job)
       if not replanted then
@@ -509,6 +532,10 @@ function Worker.run(cfg)
   end
   local hello,helloError=rpc('hello',{dock=cfg.dock,name=os.getComputerLabel(),seedBuffer=cfg.seedBuffer,dryRun=cfg.dryRun,remoteMode=true,stations=cfg.stations})
   assert(hello,helloError)
+  if saved.accessPending then
+    local recovered,why=rpc('recover',saved.accessPending);assert(recovered,why)
+    saved.accessPending=nil
+  end
   if saved.pending then
     status='Recovering harvest journal'
     local recovered,why=rpc('recover',saved.pending);assert(recovered,why)

@@ -788,6 +788,7 @@ local Garden=require('farm.lib.garden')
 local Metrics=require('farm.lib.metrics')
 local Vines=require('farm.lib.vines')
 local Performance=require('farm.lib.performance')
+local CropAccess=require('farm.lib.crop_access')
 local Journal=require('farm.lib.journal')
 local Traffic=require('farm.lib.traffic')
 local Mailbox=require('farm.lib.mailbox')
@@ -966,6 +967,20 @@ function Controller.run(cfg)
       end
       release(id);scanAt=0
       return {ok=true} -- Existing durable debt survives; never resurrect an obsolete crop plan.
+    elseif m.kind=='access_job' then
+      local l=d.job and leases[d.job.key];local p=l and garden.data.plots[l.job.key]
+      if not state.active or not fresh() or w.dryRun or not l or l.owner~=id or l.token~=d.token
+        or not p or not p.intent or p.intent.token~=l.token or U.distance(d.pos,l.job.pos)>1 then return {} end
+      if ((d.inventory or {})[l.job.seed] or 0)<2 then return {} end
+      local candidates=CropAccess.candidates(l.job,world,garden.data.plots,state.batches,leases,state.excluded)
+      local j=candidates[1];if not j then return {} end
+      -- The worker inspected its newly harvested gap before requesting access.
+      world:observe(l.job.pos,false);obstacles[l.job.key]=nil
+      leaseSerial=leaseSerial+1
+      local token=tostring(id)..':'..boot..':'..leaseSerial..':'..j.key
+      leases[j.key]={owner=id,untilTime=U.now()+120,job=j,token=token}
+      Batches.assigned(state.batches,id,j);persist()
+      return {job=j,token=token}
     elseif m.kind=='begin' then
       if not state.active or not fresh() then return nil,'Paused or waiting for fresh survey' end
       local l=d.job and leases[d.job.key]
@@ -1115,6 +1130,7 @@ function Controller.run(cfg)
         if path then
           leaseSerial=leaseSerial+1
           local token=tostring(id)..':'..boot..':'..leaseSerial..':'..j.key
+          j.accessCandidates=#CropAccess.candidates(j,world,garden.data.plots,state.batches,leases,state.excluded)>0
           leases[j.key]={owner=id,untilTime=U.now()+120,job=j,token=token}
           Batches.assigned(state.batches,id,j)
           w.route=path;w.routeStart=U.copy(d.pos);persist() -- Persist round ownership before the worker leaves or unloads.
@@ -1954,6 +1970,32 @@ function M.run(side,seed,recipe,journal,save)
   return false,'Seed craft did not complete; check recipe and Crafter'
 end
 return M
+]=],
+["farm/lib/crop_access.lua"] = [=[
+-- SPDX-License-Identifier: GPL-3.0-only
+-- Copyright (C) 2026 boredhero
+local U=require('farm.lib.util')
+local C=require('farm.lib.crops')
+local A={}
+function A.candidates(base,world,plots,batches,leases,excluded)
+  local found={}
+  if base.mode~='replant' or base.repair or base.half or not base.seed then return found end
+  for i=1,4 do
+    local key=U.key(U.add(base.pos,U.dirs[i]));local p=plots[key];local j=p and p.job
+    if j and p.live and not p.intent and not leases[key] and not excluded[key]
+      and j.mode=='replant' and not j.half and j.seed==base.seed
+      and (j.crop or j.name)==(base.crop or base.name)
+      and batches.pending[key]==(j.crop or j.name) and not batches.visited[j.roundKey or key] then
+      local blocked=true
+      for _,g in ipairs(C.goals(j)) do
+        if not U.equal(g,base.pos) and not world:blocked(g) then blocked=false;break end
+      end
+      if blocked then local copy={};for k,v in pairs(j) do copy[k]=v end;copy.version=p.version;found[#found+1]=copy end
+    end
+  end
+  return found
+end
+return A
 ]=],
 ["farm/lib/crops.lua"] = [=[
 -- SPDX-License-Identifier: GPL-3.0-only
@@ -4201,7 +4243,7 @@ function Worker.run(cfg)
     if not ok then return false,err end
     return true
   end
-  local function harvest(job,token)
+  local function harvest(job,token,nested)
     local block,side=inspect(job.pos)
     if job.repair then
       if block then return 'occupied','Adopting the block already here',block.state end
@@ -4258,6 +4300,29 @@ function Worker.run(cfg)
         if not dug then return 'error',why end
       end
     end
+    if job.accessCandidates and not nested and job.seed and not inspect(job.pos) then
+      local origin=U.copy(pos);local parent={job=job,token=token}
+      for _=1,4 do
+        local access=rpc('access_job',parent)
+        if not access or not access.job then break end
+        saved.accessPending=parent;checkpoint()
+        local reached,why=follow({job.pos},true)
+        local outcome,detail,observed
+        if reached then outcome,detail,observed=harvest(access.job,access.token,true)
+        else outcome,detail='unreachable',why end
+        local after
+        if reached then after=inspect(access.job.pos) or false end
+        local recorded,reason=rpc('result',{job=access.job,token=access.token,outcome=outcome,detail=detail,state=observed,after=after})
+        assert(recorded,reason)
+        saved.pending=parent;checkpoint()
+        if reached then
+          local returned,err=follow({origin},true)
+          if not returned then error('Crop access return: '..tostring(err),0) end
+        end
+        saved.accessPending=nil;checkpoint()
+        if not reached then break end
+      end
+    end
     if job.seed then
       local replanted,replantError=finishReplant(job)
       if not replanted then
@@ -4270,6 +4335,10 @@ function Worker.run(cfg)
   end
   local hello,helloError=rpc('hello',{dock=cfg.dock,name=os.getComputerLabel(),seedBuffer=cfg.seedBuffer,dryRun=cfg.dryRun,remoteMode=true,stations=cfg.stations})
   assert(hello,helloError)
+  if saved.accessPending then
+    local recovered,why=rpc('recover',saved.accessPending);assert(recovered,why)
+    saved.accessPending=nil
+  end
   if saved.pending then
     status='Recovering harvest journal'
     local recovered,why=rpc('recover',saved.pending);assert(recovered,why)
@@ -4411,7 +4480,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.5.2\", \"ref\": \"v0.5.2\"}\
+["farm/version.json"] = "{\"version\": \"0.5.3\", \"ref\": \"v0.5.3\"}\
 ",
 }
 local args={...}

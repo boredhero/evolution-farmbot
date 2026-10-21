@@ -33,6 +33,7 @@ Append requests in conversation order. Keep superseded requests and verify deplo
 | 27 | Investigate ComputerCraft responsiveness and identify measured controller/scheduler bottlenecks | Implemented and profiled: small writes 2-5ms; mailbox, indexed paths, event yields; two Lua threads active after restart; connectivity cache follow-up in v0.5.1 |
 | 28 | Keep working across crop rounds until one empty inventory slot remains; avoid unnecessary dock trips | Deployed v0.5.0; server restarted and four workers resumed |
 | 29 | Longer fuel endurance and useful carried backup coal | Deployed v0.5.0; server restarted and four workers resumed |
+| 30 | Reach crops under torches without removing decorations | Neighbor harvest access with durable replant obligations; testing and deployment in progress |
 
 Deployment 2026-10-20 22:27 verified active controller/worker, shared chest coordinates, one Crafter at 1789,65,3796, six blooming aloe plots and thirteen blueberry bushes.
 

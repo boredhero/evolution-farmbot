@@ -109,6 +109,13 @@ local function run(options)
   end
   N.client=function()
     return function(kind,data)
+      if kind=='access_job' then
+        if options.access and not options.accessTaken then
+          options.accessTaken=true;assert(not grid[data.job.key],'Access gap must already be empty')
+          return {job=clone(options.access),token='access'}
+        end
+        return {}
+      end
       if kind=='craft_station' then return nil,'No available Crafter in scanner coverage' end
       if kind=='step' then return {ok=true} end
       if kind=='control' then return options.recover and {recover=1} or {} end
@@ -288,4 +295,25 @@ do
   local r=run({jobs={crop(2)},stopAfterResult=true,expectedResume='2,0,0',saved={commissioned=true,assignment={key='2,0,0'},pickupBatch='minecraft:wheat'},inventory={[1]={name='minecraft:wheat_seeds',count=3}}})
   eq(r.seedPlans,0);eq(r.results[1].outcome,'harvested')
   print('PASS restarted worker requests unfinished assignment from actual GPS position without returning home')
+end
+
+do
+  local base=crop(2);base.accessCandidates=true;local child=crop(3)
+  local grid={['3,0,0']={name='minecraft:wheat',state={age=7}},['3,1,0']={name='minecraft:wall_torch'}}
+  local options={jobs={base},access=child,grid=grid,saved={commissioned=true},inventory={[1]={name='minecraft:wheat_seeds',count=4}}}
+  local r=run(options)
+  eq(#r.results,2);eq(r.results[1].job.key,child.key);eq(r.results[2].job.key,base.key)
+  eq(r.results[1].outcome,'harvested');eq(r.results[2].outcome,'harvested')
+  eq(r.grid['3,1,0'].name,'minecraft:wall_torch');eq(r.grid[base.key].state.age,0);eq(r.grid[child.key].state.age,0)
+  eq(r.saved.pending,nil);eq(r.saved.accessPending,nil)
+  local events=table.concat(r.events,'|')
+  assert(events:find('dig:2,0,0',1,true)<events:find('dig:3,0,0',1,true))
+  assert(events:find('plant:3,0,0',1,true)<events:find('plant:2,0,0',1,true))
+  options.accessTaken=nil;options.loseResult=true
+  local failed=run(options);assert(failed.saved.accessPending);assert(failed.saved.pending)
+  eq(failed.saved.accessPending.job.key,base.key);eq(failed.saved.pending.job.key,child.key)
+  local recovered=run({jobs={},saved=failed.saved});eq(recovered.events[1],'recover');eq(recovered.events[2],'recover')
+  options.accessTaken=nil;options.loseResult=nil;options.dryRun=true
+  local dry=run(options);assert(not options.accessTaken);eq(dry.grid[child.key].state.age,7)
+  print('PASS worker uses harvested neighbor to reach under torch, replants both, preserves both journals on failure and never opens access in dry mode')
 end

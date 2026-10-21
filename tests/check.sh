@@ -6,6 +6,7 @@ while IFS= read -r file; do luac -p "$file"; done < <(rg --files -g '*.lua')
 lua tests/run.lua
 lua tests/batches.lua
 lua tests/crop_compat.lua
+lua tests/crop_access.lua
 lua tests/crafting.lua
 lua tests/compost.lua
 lua tests/growth.lua
@@ -14,6 +15,7 @@ lua tests/pickup.lua
 lua tests/worker.lua
 lua tests/controller.lua
 lua tests/controller.lua modern
+lua tests/controller_access.lua
 lua tests/controller_stop.lua
 lua tests/worker_modes.lua
 lua tests/command_history.lua

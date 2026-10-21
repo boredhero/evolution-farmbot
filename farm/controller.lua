@@ -11,6 +11,7 @@ local Garden=require('farm.lib.garden')
 local Metrics=require('farm.lib.metrics')
 local Vines=require('farm.lib.vines')
 local Performance=require('farm.lib.performance')
+local CropAccess=require('farm.lib.crop_access')
 local Journal=require('farm.lib.journal')
 local Traffic=require('farm.lib.traffic')
 local Mailbox=require('farm.lib.mailbox')
@@ -189,6 +190,20 @@ function Controller.run(cfg)
       end
       release(id);scanAt=0
       return {ok=true} -- Existing durable debt survives; never resurrect an obsolete crop plan.
+    elseif m.kind=='access_job' then
+      local l=d.job and leases[d.job.key];local p=l and garden.data.plots[l.job.key]
+      if not state.active or not fresh() or w.dryRun or not l or l.owner~=id or l.token~=d.token
+        or not p or not p.intent or p.intent.token~=l.token or U.distance(d.pos,l.job.pos)>1 then return {} end
+      if ((d.inventory or {})[l.job.seed] or 0)<2 then return {} end
+      local candidates=CropAccess.candidates(l.job,world,garden.data.plots,state.batches,leases,state.excluded)
+      local j=candidates[1];if not j then return {} end
+      -- The worker inspected its newly harvested gap before requesting access.
+      world:observe(l.job.pos,false);obstacles[l.job.key]=nil
+      leaseSerial=leaseSerial+1
+      local token=tostring(id)..':'..boot..':'..leaseSerial..':'..j.key
+      leases[j.key]={owner=id,untilTime=U.now()+120,job=j,token=token}
+      Batches.assigned(state.batches,id,j);persist()
+      return {job=j,token=token}
     elseif m.kind=='begin' then
       if not state.active or not fresh() then return nil,'Paused or waiting for fresh survey' end
       local l=d.job and leases[d.job.key]
@@ -338,6 +353,7 @@ function Controller.run(cfg)
         if path then
           leaseSerial=leaseSerial+1
           local token=tostring(id)..':'..boot..':'..leaseSerial..':'..j.key
+          j.accessCandidates=#CropAccess.candidates(j,world,garden.data.plots,state.batches,leases,state.excluded)>0
           leases[j.key]={owner=id,untilTime=U.now()+120,job=j,token=token}
           Batches.assigned(state.batches,id,j)
           w.route=path;w.routeStart=U.copy(d.pos);persist() -- Persist round ownership before the worker leaves or unloads.
