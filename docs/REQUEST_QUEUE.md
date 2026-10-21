@@ -66,4 +66,4 @@ Follow-up evidence after v0.5.3 deployment: live routes to shared docks can stil
 
 41. Optional string bundling through existing Crafters: nine string to one reversible string crate. Deployed v0.6.5 to controller4 and workers8/9/10/21; full suite, runtime hashes and public tagged installer verified. All five computers running. Main raw URL temporarily CDN-cached. Toggle defaults off; live string crafting not yet observed. Backup: /home/noah/minecraft/farmbot-backups/string-crates-v065-20261021-011039.
 
-42. String to white wool (clarified request): four-input shaped crafting and mutually exclusive string conversions. Deployment pending.
+42. String to white wool (clarified request): four-input shaped crafting and mutually exclusive string conversions. Deployed v0.6.6 to controller4 and workers8/9/10/21; full suite, public main/tag installer and runtime hashes verified. All computers running. Live wool craft not yet observed. Backup: /home/noah/minecraft/farmbot-backups/wool-v066-20261021-011351.
