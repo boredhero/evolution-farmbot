@@ -40,7 +40,7 @@ function Players:poll(center,radius)
   end
   local found={}
   for _,name in ipairs(names) do
-    local got,pos=pcall(detector.getPlayerPos,name)
+    local got,pos=pcall(detector.getPlayer or detector.getPlayerPos,name)
     -- getPlayerPos is disabled by config on some servers; degrade to names only.
     if got and type(pos)=='table' and type(pos.x)=='number' and type(pos.z)=='number' then
       if not home or not pos.dimension or pos.dimension==home then

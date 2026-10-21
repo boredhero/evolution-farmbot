@@ -47,3 +47,14 @@ eq(#broken:poll(center,32),0);assert(broken.error)
 local none=Players.new(function() return nil end)
 eq(#none:poll(center,32),0);eq(none.error,nil)
 print('PASS missing detector is silent; a failing detector reports an error instead of stopping the farm')
+
+world.cy.dimension='ftbmining:mining'
+local modern=Players.new(function(kind)
+  local p=find(kind)
+  if kind=='player_detector' then p.getPlayer=p.getPlayerPos;p.getPlayerPos=nil end
+  return p
+end)
+local modernList=modern:poll(center,32)
+eq(#modernList,2);eq(modernList[1].name,'ada');assert(modernList[1].viewer)
+eq(modernList[1].x,3);eq(modernList[1].z,-3)
+print('PASS Advanced Peripherals 0.8 getPlayer preserves positions and the viewer overlay')

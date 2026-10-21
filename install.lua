@@ -814,6 +814,8 @@ function Controller.run(cfg)
   end
   local scanner=peripheral.find('geo_scanner') or peripheral.find('geoScanner')
   assert(scanner,'Attach the Geo Scanner directly to the controller.')
+  local scan=scanner.scanBlocks or scanner.scan
+  assert(type(scan)=='function','Geo Scanner has no supported scan method.')
   local function save()
     metrics:tick(U.now())
     -- Prune long-absent plants so abandoned crops do not fill the disk.
@@ -1023,7 +1025,7 @@ function Controller.run(cfg)
       if U.now()>=scanAt and not scanBusy then
         scanBusy=true
         local started=U.now()
-        local ok,data,err=pcall(scanner.scan,cfg.radius)
+        local ok,data,err=pcall(scan,cfg.radius)
         if ok and type(data)=='table' and #data>0 then
           local nextWorld=W.new(cfg.center,cfg.radius)
           nextWorld:ingest(data,U.yield)
@@ -2301,7 +2303,7 @@ function Players:poll(center,radius)
   end
   local found={}
   for _,name in ipairs(names) do
-    local got,pos=pcall(detector.getPlayerPos,name)
+    local got,pos=pcall(detector.getPlayer or detector.getPlayerPos,name)
     -- getPlayerPos is disabled by config on some servers; degrade to names only.
     if got and type(pos)=='table' and type(pos.x)=='number' and type(pos.z)=='number' then
       if not home or not pos.dimension or pos.dimension==home then

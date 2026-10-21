@@ -14,7 +14,8 @@ for x=1,2 do
   blocks[#blocks+1]={name='minecraft:farmland',x=x,y=0,z=0}
   blocks[#blocks+1]={name='minecraft:wheat',x=x,y=1,z=0}
 end
-local scanner={scan=function(radius) eq(radius,5);return blocks end}
+local scanner={}
+scanner[arg[1]=='modern' and 'scanBlocks' or 'scan']=function(radius) eq(radius,5);return blocks end
 peripheral={getNames=function() return {'left'} end,
   hasType=function(_,kind) return kind=='modem' end,call=function() return true end,
   find=function(kind) if kind=='geo_scanner' then return scanner end end}
@@ -62,7 +63,7 @@ rednet={open=function() end,
       eq(reply.data.job.key,assigned.job.key)
     end
   end}
-parallel={waitForAny=function(network,scan)
+parallel={waitForAny=function(network,discover,scan)
   local c=coroutine.create(scan);local ok,err=coroutine.resume(c);assert(ok,err)
   assert(state and state.garden.plots['1,1,0'],'Initial scan not persisted')
   network()

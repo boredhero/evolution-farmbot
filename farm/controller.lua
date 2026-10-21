@@ -37,6 +37,8 @@ function Controller.run(cfg)
   end
   local scanner=peripheral.find('geo_scanner') or peripheral.find('geoScanner')
   assert(scanner,'Attach the Geo Scanner directly to the controller.')
+  local scan=scanner.scanBlocks or scanner.scan
+  assert(type(scan)=='function','Geo Scanner has no supported scan method.')
   local function save()
     metrics:tick(U.now())
     -- Prune long-absent plants so abandoned crops do not fill the disk.
@@ -246,7 +248,7 @@ function Controller.run(cfg)
       if U.now()>=scanAt and not scanBusy then
         scanBusy=true
         local started=U.now()
-        local ok,data,err=pcall(scanner.scan,cfg.radius)
+        local ok,data,err=pcall(scan,cfg.radius)
         if ok and type(data)=='table' and #data>0 then
           local nextWorld=W.new(cfg.center,cfg.radius)
           nextWorld:ingest(data,U.yield)
