@@ -1,4 +1,4 @@
 {
-  "version": "0.5.4",
-  "notes": "Recognize Advanced Peripherals registry-qualified block tags as well as ordinary turtle tags; fixes cactus and other crops on tagged modded sand, dirt and farmland."
+  "version": "0.6.0",
+  "notes": "Fleet-wide Settings menu with eight optional auto-compacting recipes; reserve planting stock, use automatically discovered Crafters, recover interrupted nine-input crafts and unload compacted produce."
 }

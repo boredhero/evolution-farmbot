@@ -6,6 +6,7 @@ local C=require('farm.lib.crops')
 local N=require('farm.lib.network')
 local SeedRecipes=require('farm.lib.seed_recipes')
 local Crafting=require('farm.lib.crafting')
+local CompactCraft=require('farm.lib.compact_crafting')
 local Compost=require('farm.lib.compost')
 local Pickup=require('farm.lib.pickup')
 local Soil=require('farm.lib.soil')
@@ -262,6 +263,7 @@ function Worker.run(cfg)
     checkpoint();return not U.equal(start,pos)
   end
   local stations=cfg.stations or {}
+  local craftSeed
   local function dock(reason)
     sweepDrops()
     status='Dock: '..(reason or 'Seed resupply')
@@ -269,6 +271,18 @@ function Worker.run(cfg)
     local compostFuel=turtle.getFuelLevel()
     if not cfg.dryRun and (compostFuel=='unlimited' or compostFuel>=cfg.fuelReserve*2) then
       local plan=rpc('seed_plan')
+      for _,recipe in ipairs(plan and plan.compacting or {}) do
+        for _=1,recipe.batches do
+          local fresh=rpc('seed_plan');local allowed=false
+          for _,r in ipairs(fresh and fresh.compacting or {}) do if r.key==recipe.key then allowed=true;break end end
+          if not allowed then break end
+          local made,why=craftSeed({seed=recipe.output,recipe=recipe})
+          if not made then
+            if saved.crafting then return false,'Compacting recovery: '..tostring(why) end
+            print('Compacting skipped: '..tostring(why));break
+          end
+        end
+      end
       if plan and plan.compost and next(plan.compost) then
         local station=rpc('compost_station')
         if station and station.pos then
@@ -362,9 +376,9 @@ function Worker.run(cfg)
     if stations.output then navigate({cfg.dock},true) end
     status='Docked';return true
   end
-  local function craftSeed(job)
+  craftSeed=function(job)
     local pending=saved.crafting
-    local recipe=pending and pending.recipe or SeedRecipes.find(job.seed,Worker.inventory())
+    local recipe=pending and pending.recipe or job.recipe or SeedRecipes.find(job.seed,Worker.inventory())
     if not recipe then return false,'No carried ingredient for a verified seed recipe' end
     local station,err=rpc('craft_station',{target=pending and pending.target})
     if not station then return false,err end
@@ -384,7 +398,8 @@ function Worker.run(cfg)
       pending={target=station.pos,seed=job.seed,recipe=recipe};saved.crafting=pending;checkpoint()
     end
     status='Crafting '..pending.seed
-    local made,reason=Crafting.run(peripheralSide,pending.seed,pending.recipe,pending,checkpoint)
+    local runner=pending.recipe.inputCount==9 and CompactCraft or Crafting
+    local made,reason=runner.run(peripheralSide,pending.seed,pending.recipe,pending,checkpoint)
     if made or not pending.loaded then saved.crafting=nil;checkpoint();rpc('craft_done') end
     return made,reason
   end

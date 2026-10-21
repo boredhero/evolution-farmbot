@@ -14,11 +14,14 @@ os.getComputerID=function() return 1 end
 os.getComputerLabel=function() return 'test-worker' end
 sleep=function(seconds) now=now+seconds*1000 end
 parallel={waitForAny=function(f) f() end}
+local CompactCraft=require('farm.lib.compact_crafting')
+local compactRun=CompactCraft.run
 local function run(options)
   local position={x=0,y=1,z=0};local heading=1;local selected=1
   local grid={['0,1,-1']={name='minecraft:chest'},['0,2,0']={name='minecraft:chest'}}
   if options.station then grid[U.key(options.station)]={name='minecraft:chest'} end
   for k,b in pairs(options.grid or {}) do grid[k]=clone(b) end
+  if options.compact then grid['3,1,1']={name='minecraft:crafter',state={orientation='north_up'}} end
   local inv=clone(options.inventory or {});local saved=clone(options.saved or {})
   local results,events={},{};local seedPlans=0;local nextJob=0;local moveCalls=0;local modeSent,configSaved
   local function target(side)
@@ -85,6 +88,11 @@ local function run(options)
       return n>0
     end
   end
+  CompactCraft.run=options.compact and function(side,output,recipe,journal,save)
+    events[#events+1]='compact';journal.loaded=true;save()
+    for i=1,16 do if inv[i] and inv[i].name==recipe.item then inv[i].count=inv[i].count-9;break end end
+    add(output,1);return true
+  end or compactRun
   local function move(side)
     moveCalls=moveCalls+1;local p=target(side)
     if options.entityBlock and U.key(p)=='1,1,0' then return false,'Movement obstructed' end
@@ -116,6 +124,8 @@ local function run(options)
         end
         return {}
       end
+      if kind=='craft_done' then return {ok=true} end
+      if kind=='craft_station' and options.compact then return {pos={x=3,y=1,z=1}} end
       if kind=='craft_station' then return nil,'No available Crafter in scanner coverage' end
       if kind=='step' then return {ok=true} end
       if kind=='control' then return options.recover and {recover=1} or {} end
@@ -316,4 +326,15 @@ do
   options.accessTaken=nil;options.loseResult=nil;options.dryRun=true
   local dry=run(options);assert(not options.accessTaken);eq(dry.grid[child.key].state.age,7)
   print('PASS worker uses harvested neighbor to reach under torch, replants both, preserves both journals on failure and never opens access in dry mode')
+end
+
+do
+ local r=run({jobs={},compact=true,inventory={[1]={name='minecraft:wheat',count=20}},
+ seedPlan={seeds={},needed={},keep={},compacting={{key='wheat',item='minecraft:wheat',output='minecraft:hay_block',inputCount=9,count=1,batches=2}}}})
+ local count=0;for _,event in ipairs(r.events) do if event=='compact' then count=count+1 end end
+ eq(count,2);eq(r.saved.crafting,nil);assert(not next(r.inventory))
+ local dry=run({jobs={},compact=true,dryRun=true,inventory={[1]={name='minecraft:wheat',count=20}},
+ seedPlan={seeds={},needed={},keep={},compacting={{key='wheat',item='minecraft:wheat',output='minecraft:hay_block',inputCount=9,count=1,batches=2}}}})
+ for _,event in ipairs(dry.events) do assert(event~='compact') end
+ print('PASS worker compacts through the shared Crafter before unloading output and leftovers, clears recovery journal and honors dry mode')
 end

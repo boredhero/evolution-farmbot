@@ -5,6 +5,7 @@ local Players=require('farm.lib.players')
 local C=require('farm.lib.crops')
 local Growth=require('farm.lib.growth')
 local F=require('farm.lib.frame')
+local Compacting=require('farm.lib.compacting')
 local D={};D.__index=D
 function D.installedVersion()
   if not fs or not textutils then return 'unversioned' end
@@ -93,6 +94,24 @@ function D:render(m,v,w,h)
   local barH=2
   local hh=h-barH
   local function bar(y) f:fill(1,y,w,1,' ','0','b');return 3 end
+  if v.settings then
+    local recipes=Compacting.recipes
+    v.setting=math.max(1,math.min(#recipes,v.setting or 1))
+    local selected=recipes[v.setting];local enabled=m.settings and m.settings.compacting or {}
+    f:write(2,1,'FARMBOT / SETTINGS','0','b')
+    f:write(2,2,'Fleet-wide auto-compacting','0','b')
+    local rows=math.max(1,hh-9);local first=math.max(1,v.setting-rows+1)
+    for i=first,math.min(#recipes,first+rows-1) do
+      local r=recipes[i];f:write(3,4+i-first,(i==v.setting and '> ' or '  ')..(enabled[r.key] and 'ON  ' or 'OFF ')..r.label,i==v.setting and '5' or '0')
+    end
+    f:write(3,hh-4,'Nine surplus items -> one block/crate','3')
+    f:write(3,hh-3,'Planting stock is kept. Uses a Crafter.','8')
+    f:write(3,hh-2,'Enable all nine slots; keep output clear.','8')
+    local x=bar(h-1);x=button(f,hits,x,h-1,'[PREV]','setting',-1);x=button(f,hits,x,h-1,'[NEXT]','setting',1)
+    button(f,hits,x,h-1,enabled[selected.key] and '[TURN OFF]' or '[TURN ON]','compact',selected.key)
+    x=bar(h);x=button(f,hits,x,h,'[MAP]','view','map');button(f,hits,x,h,'[LIVE]','view','stats')
+    return f,hits
+  end
   if role=='stats' and v.lifetime then
     f:write(2,1,'FARMBOT / LIFETIME STATS','0','b')
     local metrics=m.metrics;local bots=metrics.byWorker or {};local ids={};local steps=0
@@ -117,7 +136,7 @@ function D:render(m,v,w,h)
     else f:write(3,10,'Waiting for a worker report...') end
     f:write(3,hh-1,'Per-bot tracking began with stats update.','8')
     local x=bar(h-1);x=button(f,hits,x,h-1,'[PREV BOT]','bot',-1);button(f,hits,x,h-1,'[NEXT BOT]','bot',1)
-    x=bar(h);x=button(f,hits,x,h,'[MAP]','view','map');x=button(f,hits,x,h,'[LIVE]','view','stats')
+    x=bar(h);x=button(f,hits,x,h,'[MAP]','view','map');x=button(f,hits,x,h,'[LIVE]','view','stats');x=button(f,hits,x,h,'[SETTINGS]','view','settings')
     x=button(f,hits,x,h,'[TEXT -]','scale',-0.5);button(f,hits,x,h,'[TEXT +]','scale',0.5)
     return f,hits
   end
@@ -125,7 +144,7 @@ function D:render(m,v,w,h)
     f:write(2,6,'Use TEXT - for more room.','4')
     f:write(2,8,'Plots '..count(m.plots)..' | workers '..count(m.workers))
     f:write(2,10,'Lifetime harvests '..m.metrics.harvests)
-    local bx=bar(h-1);button(f,hits,bx,h-1,'[STATS]','view','lifetime')
+    local bx=bar(h-1);bx=button(f,hits,bx,h-1,'[STATS]','view','lifetime');button(f,hits,bx,h-1,'[SETTINGS]','view','settings')
     local x=bar(h);x=button(f,hits,x,h,'[TEXT -]','scale',-0.5);button(f,hits,x,h,'[TEXT +]','scale',0.5)
     return f,hits
   end
@@ -140,7 +159,7 @@ function D:render(m,v,w,h)
     x=button(f,hits,x,hh+1,v.cache==false and '[CACHE OFF]' or '[CACHE ON]','cache')
     x=button(f,hits,x,hh+1,'[TEXT -]','scale',-0.5);button(f,hits,x,hh+1,'[TEXT +]','scale',0.5)
     x=bar(h);x=button(f,hits,x,h,'[N]','pan','n');x=button(f,hits,x,h,'[S]','pan','s')
-    x=button(f,hits,x,h,'[W]','pan','w');x=button(f,hits,x,h,'[E]','pan','e');button(f,hits,x,h,'[STATS]','view','lifetime')
+    x=button(f,hits,x,h,'[W]','pan','w');x=button(f,hits,x,h,'[E]','pan','e');x=button(f,hits,x,h,'[STATS]','view','lifetime');button(f,hits,x,h,'[SETTINGS]','view','settings')
     local span=math.max(9,math.ceil((m.radius*2+1)/(v.zoom or 1)))
     local cx,cz=v.cx or m.center.x,v.cz or m.center.z
     local minX,minZ=cx-math.floor(span/2),cz-math.floor(span/2)
@@ -322,7 +341,7 @@ function D:render(m,v,w,h)
       f:write(3,hh-footer+3+i,(math.floor(m.now-event.time)..'s  '..event.outcome..'  '..short(event.name)..(event.detail and ' | '..event.detail or '')):sub(1,w-5),event.outcome=='deferred' and 'e' or '0')
     end end
     f:write(3,hh-1,'? = unseen/stale | HV = lifetime harvest actions','0')
-    local nav=bar(h-1);nav=button(f,hits,nav,h-1,'[MAP]','view','map');button(f,hits,nav,h-1,'[STATS]','view','lifetime')
+    local nav=bar(h-1);nav=button(f,hits,nav,h-1,'[MAP]','view','map');nav=button(f,hits,nav,h-1,'[STATS]','view','lifetime');button(f,hits,nav,h-1,'[SETTINGS]','view','settings')
     local bx=bar(h);bx=button(f,hits,bx,h,'[PREV CROPS]','page',-1);bx=button(f,hits,bx,h,'[NEXT CROPS]','page',1)
     bx=button(f,hits,bx,h,'[TEXT -]','scale',-0.5);button(f,hits,bx,h,'[TEXT +]','scale',0.5)
   end
@@ -344,7 +363,11 @@ function D:touch(name,x,y,m)
     if x>=hit.x and x<hit.x+hit.w and y>=hit.y and y<hit.y+hit.h then
       local action=hit.action
       if action=='select' then v.selected=hit.value
-      elseif action=='view' then v.role=hit.value=='map' and 'map' or 'stats';v.lifetime=hit.value=='lifetime'
+      elseif action=='setting' then v.setting=((v.setting or 1)-1+hit.value)%#Compacting.recipes+1
+      elseif action=='compact' then
+        m.settings=m.settings or {};m.settings.compacting=m.settings.compacting or {}
+        m.settings.compacting[hit.value]=not m.settings.compacting[hit.value]
+      elseif action=='view' then v.settings=hit.value=='settings';v.role=hit.value=='map' and 'map' or 'stats';v.lifetime=hit.value=='lifetime'
       elseif action=='bot' then v.bot=math.max(1,(v.bot or 1)+hit.value)
       elseif action=='page' then v.page=math.max(1,(v.page or 1)+hit.value)
       elseif action=='cache' then v.cache=v.cache==false

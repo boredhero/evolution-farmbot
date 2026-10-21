@@ -23,6 +23,7 @@ local Help=require('farm.lib.help')
 local Batches=require('farm.lib.batches')
 local SeedRecipes=require('farm.lib.seed_recipes')
 local Compost=require('farm.lib.compost')
+local Compacting=require('farm.lib.compacting')
 local Growth=require('farm.lib.growth')
 local Controller={}
 function Controller.run(cfg)
@@ -30,6 +31,7 @@ function Controller.run(cfg)
   local protocol=N.protocol(cfg)
   local state=S.load('farm/data/controller',{active=false,history={},excluded={}})
   local journal=Journal.new('farm/data/controller',state)
+  state.settings=state.settings or {};state.settings.compacting=state.settings.compacting or {}
   state.history=state.history or {};state.excluded=state.excluded or {}
   state.batches=state.batches or {};state.growth=state.growth or {}
   if state.batches.schema~=2 then state.batches={schema=2} end
@@ -179,7 +181,7 @@ function Controller.run(cfg)
       end
       for item in pairs(ingredients) do seeds[item]=true;keep[item]=math.max(keep[item] or 0,1) end
       local compost=Compost.plan(garden,state.batches,leases,w.inventory or {},keep,stock)
-      return {seeds=seeds,needed=needed,keep=keep,compost=compost}
+      return {seeds=seeds,needed=needed,keep=keep,compost=compost,compacting=Compacting.plan(state.settings.compacting,w.inventory or {},keep,needed)}
     elseif m.kind=='bank_store' then
       if not w.dock or not U.equal(d.pos,w.dock) then return nil,'Seed storage requires worker at its dock' end
       return Seeds.store(cfg.seedSource,w.seedBuffer)
@@ -442,7 +444,7 @@ function Controller.run(cfg)
   local function displayModel()
     metrics:tick(U.now())
     local s=summary()
-    return {now=U.now(),active=state.active,world=world,center=cfg.center,radius=cfg.radius,version=installedVersion,
+    return {settings=state.settings,now=U.now(),active=state.active,world=world,center=cfg.center,radius=cfg.radius,version=installedVersion,
       plots=garden.data.plots,history=state.history,growth=state.growth,excluded=state.excluded,workers=workers,
       players=playerList,playerError=playerTracker.error,
       cache=cache,cacheHits=hits,metrics=metrics.data,sessionUptime=U.now()-metrics.started,

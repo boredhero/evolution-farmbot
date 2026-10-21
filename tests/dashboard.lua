@@ -151,3 +151,18 @@ for y=1,auto.h do local text,_,bg=auto:row(y)
 end
 assert(blueBot and contains(auto,'1=Bot #'),'bot is a blue number with an explicit legend')
 print('PASS multilevel AUTO crop projection and blue numbered bot markers distinct from the player arrow')
+
+m.settings={compacting={}}
+for _,size in ipairs({{51,19},{164,81}}) do
+ local view={role='stats',settings=true,setting=1}
+ local settingsFrame,settingsHits=d:render(m,view,size[1],size[2]);validate(settingsFrame)
+ assert(contains(settingsFrame,'SETTINGS'));assert(contains(settingsFrame,'Melon'))
+ for _,hit in ipairs(settingsHits) do assert(hit.y>=size[2]-1 and hit.x+hit.w-1<=size[1]) end
+ d.views.settings=view;d.hits.settings=settingsHits
+ for _,hit in ipairs(settingsHits) do if hit.action=='compact' then
+  local before=m.settings.compacting.melon;assert(d:touch('settings',hit.x,hit.y,m));assert(m.settings.compacting.melon~=before)
+ end end
+ local other=D.new();local frame=other:render(m,{settings=true,setting=1},size[1],size[2])
+ assert(contains(frame,m.settings.compacting.melon and 'ON  Melon' or 'OFF Melon'))
+end
+print('PASS fleet compacting settings use bottom-row controls, persist through the shared model and fit normal computer and large monitor sizes')

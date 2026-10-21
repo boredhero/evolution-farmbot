@@ -800,6 +800,7 @@ local Help=require('farm.lib.help')
 local Batches=require('farm.lib.batches')
 local SeedRecipes=require('farm.lib.seed_recipes')
 local Compost=require('farm.lib.compost')
+local Compacting=require('farm.lib.compacting')
 local Growth=require('farm.lib.growth')
 local Controller={}
 function Controller.run(cfg)
@@ -807,6 +808,7 @@ function Controller.run(cfg)
   local protocol=N.protocol(cfg)
   local state=S.load('farm/data/controller',{active=false,history={},excluded={}})
   local journal=Journal.new('farm/data/controller',state)
+  state.settings=state.settings or {};state.settings.compacting=state.settings.compacting or {}
   state.history=state.history or {};state.excluded=state.excluded or {}
   state.batches=state.batches or {};state.growth=state.growth or {}
   if state.batches.schema~=2 then state.batches={schema=2} end
@@ -956,7 +958,7 @@ function Controller.run(cfg)
       end
       for item in pairs(ingredients) do seeds[item]=true;keep[item]=math.max(keep[item] or 0,1) end
       local compost=Compost.plan(garden,state.batches,leases,w.inventory or {},keep,stock)
-      return {seeds=seeds,needed=needed,keep=keep,compost=compost}
+      return {seeds=seeds,needed=needed,keep=keep,compost=compost,compacting=Compacting.plan(state.settings.compacting,w.inventory or {},keep,needed)}
     elseif m.kind=='bank_store' then
       if not w.dock or not U.equal(d.pos,w.dock) then return nil,'Seed storage requires worker at its dock' end
       return Seeds.store(cfg.seedSource,w.seedBuffer)
@@ -1219,7 +1221,7 @@ function Controller.run(cfg)
   local function displayModel()
     metrics:tick(U.now())
     local s=summary()
-    return {now=U.now(),active=state.active,world=world,center=cfg.center,radius=cfg.radius,version=installedVersion,
+    return {settings=state.settings,now=U.now(),active=state.active,world=world,center=cfg.center,radius=cfg.radius,version=installedVersion,
       plots=garden.data.plots,history=state.history,growth=state.growth,excluded=state.excluded,workers=workers,
       players=playerList,playerError=playerTracker.error,
       cache=cache,cacheHits=hits,metrics=metrics.data,sessionUptime=U.now()-metrics.started,
@@ -1360,6 +1362,7 @@ local Players=require('farm.lib.players')
 local C=require('farm.lib.crops')
 local Growth=require('farm.lib.growth')
 local F=require('farm.lib.frame')
+local Compacting=require('farm.lib.compacting')
 local D={};D.__index=D
 function D.installedVersion()
   if not fs or not textutils then return 'unversioned' end
@@ -1448,6 +1451,24 @@ function D:render(m,v,w,h)
   local barH=2
   local hh=h-barH
   local function bar(y) f:fill(1,y,w,1,' ','0','b');return 3 end
+  if v.settings then
+    local recipes=Compacting.recipes
+    v.setting=math.max(1,math.min(#recipes,v.setting or 1))
+    local selected=recipes[v.setting];local enabled=m.settings and m.settings.compacting or {}
+    f:write(2,1,'FARMBOT / SETTINGS','0','b')
+    f:write(2,2,'Fleet-wide auto-compacting','0','b')
+    local rows=math.max(1,hh-9);local first=math.max(1,v.setting-rows+1)
+    for i=first,math.min(#recipes,first+rows-1) do
+      local r=recipes[i];f:write(3,4+i-first,(i==v.setting and '> ' or '  ')..(enabled[r.key] and 'ON  ' or 'OFF ')..r.label,i==v.setting and '5' or '0')
+    end
+    f:write(3,hh-4,'Nine surplus items -> one block/crate','3')
+    f:write(3,hh-3,'Planting stock is kept. Uses a Crafter.','8')
+    f:write(3,hh-2,'Enable all nine slots; keep output clear.','8')
+    local x=bar(h-1);x=button(f,hits,x,h-1,'[PREV]','setting',-1);x=button(f,hits,x,h-1,'[NEXT]','setting',1)
+    button(f,hits,x,h-1,enabled[selected.key] and '[TURN OFF]' or '[TURN ON]','compact',selected.key)
+    x=bar(h);x=button(f,hits,x,h,'[MAP]','view','map');button(f,hits,x,h,'[LIVE]','view','stats')
+    return f,hits
+  end
   if role=='stats' and v.lifetime then
     f:write(2,1,'FARMBOT / LIFETIME STATS','0','b')
     local metrics=m.metrics;local bots=metrics.byWorker or {};local ids={};local steps=0
@@ -1472,7 +1493,7 @@ function D:render(m,v,w,h)
     else f:write(3,10,'Waiting for a worker report...') end
     f:write(3,hh-1,'Per-bot tracking began with stats update.','8')
     local x=bar(h-1);x=button(f,hits,x,h-1,'[PREV BOT]','bot',-1);button(f,hits,x,h-1,'[NEXT BOT]','bot',1)
-    x=bar(h);x=button(f,hits,x,h,'[MAP]','view','map');x=button(f,hits,x,h,'[LIVE]','view','stats')
+    x=bar(h);x=button(f,hits,x,h,'[MAP]','view','map');x=button(f,hits,x,h,'[LIVE]','view','stats');x=button(f,hits,x,h,'[SETTINGS]','view','settings')
     x=button(f,hits,x,h,'[TEXT -]','scale',-0.5);button(f,hits,x,h,'[TEXT +]','scale',0.5)
     return f,hits
   end
@@ -1480,7 +1501,7 @@ function D:render(m,v,w,h)
     f:write(2,6,'Use TEXT - for more room.','4')
     f:write(2,8,'Plots '..count(m.plots)..' | workers '..count(m.workers))
     f:write(2,10,'Lifetime harvests '..m.metrics.harvests)
-    local bx=bar(h-1);button(f,hits,bx,h-1,'[STATS]','view','lifetime')
+    local bx=bar(h-1);bx=button(f,hits,bx,h-1,'[STATS]','view','lifetime');button(f,hits,bx,h-1,'[SETTINGS]','view','settings')
     local x=bar(h);x=button(f,hits,x,h,'[TEXT -]','scale',-0.5);button(f,hits,x,h,'[TEXT +]','scale',0.5)
     return f,hits
   end
@@ -1495,7 +1516,7 @@ function D:render(m,v,w,h)
     x=button(f,hits,x,hh+1,v.cache==false and '[CACHE OFF]' or '[CACHE ON]','cache')
     x=button(f,hits,x,hh+1,'[TEXT -]','scale',-0.5);button(f,hits,x,hh+1,'[TEXT +]','scale',0.5)
     x=bar(h);x=button(f,hits,x,h,'[N]','pan','n');x=button(f,hits,x,h,'[S]','pan','s')
-    x=button(f,hits,x,h,'[W]','pan','w');x=button(f,hits,x,h,'[E]','pan','e');button(f,hits,x,h,'[STATS]','view','lifetime')
+    x=button(f,hits,x,h,'[W]','pan','w');x=button(f,hits,x,h,'[E]','pan','e');x=button(f,hits,x,h,'[STATS]','view','lifetime');button(f,hits,x,h,'[SETTINGS]','view','settings')
     local span=math.max(9,math.ceil((m.radius*2+1)/(v.zoom or 1)))
     local cx,cz=v.cx or m.center.x,v.cz or m.center.z
     local minX,minZ=cx-math.floor(span/2),cz-math.floor(span/2)
@@ -1677,7 +1698,7 @@ function D:render(m,v,w,h)
       f:write(3,hh-footer+3+i,(math.floor(m.now-event.time)..'s  '..event.outcome..'  '..short(event.name)..(event.detail and ' | '..event.detail or '')):sub(1,w-5),event.outcome=='deferred' and 'e' or '0')
     end end
     f:write(3,hh-1,'? = unseen/stale | HV = lifetime harvest actions','0')
-    local nav=bar(h-1);nav=button(f,hits,nav,h-1,'[MAP]','view','map');button(f,hits,nav,h-1,'[STATS]','view','lifetime')
+    local nav=bar(h-1);nav=button(f,hits,nav,h-1,'[MAP]','view','map');nav=button(f,hits,nav,h-1,'[STATS]','view','lifetime');button(f,hits,nav,h-1,'[SETTINGS]','view','settings')
     local bx=bar(h);bx=button(f,hits,bx,h,'[PREV CROPS]','page',-1);bx=button(f,hits,bx,h,'[NEXT CROPS]','page',1)
     bx=button(f,hits,bx,h,'[TEXT -]','scale',-0.5);button(f,hits,bx,h,'[TEXT +]','scale',0.5)
   end
@@ -1699,7 +1720,11 @@ function D:touch(name,x,y,m)
     if x>=hit.x and x<hit.x+hit.w and y>=hit.y and y<hit.y+hit.h then
       local action=hit.action
       if action=='select' then v.selected=hit.value
-      elseif action=='view' then v.role=hit.value=='map' and 'map' or 'stats';v.lifetime=hit.value=='lifetime'
+      elseif action=='setting' then v.setting=((v.setting or 1)-1+hit.value)%#Compacting.recipes+1
+      elseif action=='compact' then
+        m.settings=m.settings or {};m.settings.compacting=m.settings.compacting or {}
+        m.settings.compacting[hit.value]=not m.settings.compacting[hit.value]
+      elseif action=='view' then v.settings=hit.value=='settings';v.role=hit.value=='map' and 'map' or 'stats';v.lifetime=hit.value=='lifetime'
       elseif action=='bot' then v.bot=math.max(1,(v.bot or 1)+hit.value)
       elseif action=='page' then v.page=math.max(1,(v.page or 1)+hit.value)
       elseif action=='cache' then v.cache=v.cache==false
@@ -1847,6 +1872,107 @@ function H:read()
   return line
 end
 return H
+]=],
+["farm/lib/compact_crafting.lua"] = [=[
+-- SPDX-License-Identifier: GPL-3.0-only
+-- Copyright (C) 2026 boredhero
+-- Nine identical inputs, all Crafter slots enabled; one verified output per pulse.
+local M={}
+local function count(name)
+  local n=0;for i=1,16 do local d=turtle.getItemDetail(i);if d and d.name==name then n=n+d.count end end;return n
+end
+function M.run(side,output,recipe,journal,save)
+  local inv=peripheral.wrap(side)
+  if not inv or type(inv.list)~='function' then return false,'Crafter inventory is not accessible' end
+  local drop=side=='top' and turtle.dropUp or side=='bottom' and turtle.dropDown or turtle.drop
+  local suck=side=='top' and turtle.suckUp or side=='bottom' and turtle.suckDown or turtle.suck
+  local function contents()
+    local items=inv.list();local n=0
+    for _,d in pairs(items) do if d.name~=recipe.item then return nil,items end;n=n+d.count end
+    return n,items
+  end
+  if not journal.loaded then
+    if next(inv.list()) then return false,'Crafter must be empty' end
+    if redstone.getOutput(side) then return false,'Crafter control side already powered' end
+    if count(recipe.item)<9 then return false,'Not enough compacting ingredients' end
+    local room=false
+    for i=1,16 do local d=turtle.getItemDetail(i);if not d or (d.name==output and turtle.getItemSpace(i)>0) then room=true end end
+    if not room then return false,'No room for compacted output' end
+    journal.loaded=true;journal.before=count(output);journal.ingredientBefore=count(recipe.item);save()
+  end
+  local n,items=contents()
+  if n==0 and count(output)==journal.before+1 then return true end
+  if not n or n>9 or count(recipe.item)+n~=journal.ingredientBefore or count(output)~=journal.before then
+    return false,'Compacting inventory changed; preserving recovery journal'
+  end
+  local function rollback(reason)
+    local amount=contents()
+    if amount and count(recipe.item)+amount==journal.ingredientBefore and count(output)==journal.before then
+      for _=1,9 do
+        if amount==0 then journal.loaded=false;save();return false,reason end
+        -- Reuse the ingredient slot where possible; otherwise an empty slot.
+        for i=1,16 do local d=turtle.getItemDetail(i);if not d or (d.name==recipe.item and turtle.getItemSpace(i)>0) then turtle.select(i);break end end
+        if not suck(amount) then break end
+        amount=contents();if not amount then break end
+      end
+      if amount==0 and count(recipe.item)==journal.ingredientBefore then journal.loaded=false;save() end
+    end
+    return false,reason
+  end
+  while n<9 do
+    local source
+    for i=1,16 do local d=turtle.getItemDetail(i);if d and d.name==recipe.item then source=i;break end end
+    if not source then return rollback('Missing compacting input') end
+    turtle.select(source)
+    if not drop(1) then return rollback('Crafter refused input; enable all nine slots') end
+    local nextCount;nextCount,items=contents()
+    if nextCount~=n+1 then return false,'Crafter input changed; preserving recovery journal' end
+    n=nextCount
+  end
+  for slot=1,9 do if not items[slot] or items[slot].count~=1 then return rollback('Compacting needs all nine Crafter slots enabled') end end
+  local ok,err=pcall(function()
+    redstone.setOutput(side,false);sleep(0.1);redstone.setOutput(side,true);sleep(0.2)
+    redstone.setOutput(side,false);sleep(0.6)
+  end)
+  redstone.setOutput(side,false)
+  if not ok then error(err,0) end
+  if count(output)==journal.before+1 and not next(inv.list()) then return true end
+  return rollback('Compacting did not complete; check recipe and Crafter output face')
+end
+return M
+]=],
+["farm/lib/compacting.lua"] = [=[
+-- SPDX-License-Identifier: GPL-3.0-only
+-- Copyright (C) 2026 boredhero
+local Seeds=require('farm.lib.seed_recipes')
+local M={}
+M.recipes={
+ {key='melon',label='Melon slices -> melon blocks',item='minecraft:melon_slice',output='minecraft:melon'},
+ {key='wheat',label='Wheat -> hay bales',item='minecraft:wheat',output='minecraft:hay_block'},
+ {key='cabbage',label='Cabbages -> cabbage crates',item='farmersdelight:cabbage',output='farmersdelight:cabbage_crate'},
+ {key='tomato',label='Tomatoes -> tomato crates',item='farmersdelight:tomato',output='farmersdelight:tomato_crate'},
+ {key='onion',label='Onions -> onion crates',item='farmersdelight:onion',output='farmersdelight:onion_crate'},
+ {key='rice',label='Rice -> rice bags',item='farmersdelight:rice',output='farmersdelight:rice_bag'},
+ {key='panicle',label='Rice panicles -> rice bales',item='farmersdelight:rice_panicle',output='farmersdelight:rice_bale'},
+ {key='straw',label='Straw -> straw bales',item='farmersdelight:straw',output='farmersdelight:straw_bale'},
+}
+function M.plan(settings,inventory,keep,needed)
+  local out={};local reserve={}
+  for item,n in pairs(keep or {}) do reserve[item]=n end
+  -- Preserve produce required to replenish known planting stocks through seed recipes.
+  for seed,n in pairs(needed or {}) do
+    local deficit=math.max(0,n-(inventory[seed] or 0))
+    for _,r in ipairs(Seeds.recipes[seed] or {}) do
+      reserve[r.item]=math.max(reserve[r.item] or 0,math.ceil(deficit/r.count))
+    end
+  end
+  for _,r in ipairs(M.recipes) do if settings and settings[r.key]==true then
+    local batches=math.floor(((inventory[r.item] or 0)-(reserve[r.item] or 0))/9)
+    if batches>0 then out[#out+1]={key=r.key,item=r.item,output=r.output,count=1,inputCount=9,batches=batches} end
+  end end
+  return out
+end
+return M
 ]=],
 ["farm/lib/compost.lua"] = [=[
 -- SPDX-License-Identifier: GPL-3.0-only
@@ -3811,6 +3937,7 @@ local C=require('farm.lib.crops')
 local N=require('farm.lib.network')
 local SeedRecipes=require('farm.lib.seed_recipes')
 local Crafting=require('farm.lib.crafting')
+local CompactCraft=require('farm.lib.compact_crafting')
 local Compost=require('farm.lib.compost')
 local Pickup=require('farm.lib.pickup')
 local Soil=require('farm.lib.soil')
@@ -4067,6 +4194,7 @@ function Worker.run(cfg)
     checkpoint();return not U.equal(start,pos)
   end
   local stations=cfg.stations or {}
+  local craftSeed
   local function dock(reason)
     sweepDrops()
     status='Dock: '..(reason or 'Seed resupply')
@@ -4074,6 +4202,18 @@ function Worker.run(cfg)
     local compostFuel=turtle.getFuelLevel()
     if not cfg.dryRun and (compostFuel=='unlimited' or compostFuel>=cfg.fuelReserve*2) then
       local plan=rpc('seed_plan')
+      for _,recipe in ipairs(plan and plan.compacting or {}) do
+        for _=1,recipe.batches do
+          local fresh=rpc('seed_plan');local allowed=false
+          for _,r in ipairs(fresh and fresh.compacting or {}) do if r.key==recipe.key then allowed=true;break end end
+          if not allowed then break end
+          local made,why=craftSeed({seed=recipe.output,recipe=recipe})
+          if not made then
+            if saved.crafting then return false,'Compacting recovery: '..tostring(why) end
+            print('Compacting skipped: '..tostring(why));break
+          end
+        end
+      end
       if plan and plan.compost and next(plan.compost) then
         local station=rpc('compost_station')
         if station and station.pos then
@@ -4167,9 +4307,9 @@ function Worker.run(cfg)
     if stations.output then navigate({cfg.dock},true) end
     status='Docked';return true
   end
-  local function craftSeed(job)
+  craftSeed=function(job)
     local pending=saved.crafting
-    local recipe=pending and pending.recipe or SeedRecipes.find(job.seed,Worker.inventory())
+    local recipe=pending and pending.recipe or job.recipe or SeedRecipes.find(job.seed,Worker.inventory())
     if not recipe then return false,'No carried ingredient for a verified seed recipe' end
     local station,err=rpc('craft_station',{target=pending and pending.target})
     if not station then return false,err end
@@ -4189,7 +4329,8 @@ function Worker.run(cfg)
       pending={target=station.pos,seed=job.seed,recipe=recipe};saved.crafting=pending;checkpoint()
     end
     status='Crafting '..pending.seed
-    local made,reason=Crafting.run(peripheralSide,pending.seed,pending.recipe,pending,checkpoint)
+    local runner=pending.recipe.inputCount==9 and CompactCraft or Crafting
+    local made,reason=runner.run(peripheralSide,pending.seed,pending.recipe,pending,checkpoint)
     if made or not pending.loaded then saved.crafting=nil;checkpoint();rpc('craft_done') end
     return made,reason
   end
@@ -4482,7 +4623,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.5.4\", \"ref\": \"v0.5.4\"}\
+["farm/version.json"] = "{\"version\": \"0.6.0\", \"ref\": \"v0.6.0\"}\
 ",
 }
 local args={...}

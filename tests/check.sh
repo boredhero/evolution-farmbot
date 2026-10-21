@@ -8,6 +8,7 @@ lua tests/batches.lua
 lua tests/crop_compat.lua
 lua tests/crop_access.lua
 lua tests/crafting.lua
+lua tests/compacting.lua
 lua tests/compost.lua
 lua tests/growth.lua
 lua tests/packing.lua
