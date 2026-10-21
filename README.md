@@ -270,3 +270,17 @@ Compacting uses automatically discovered vanilla Crafters inside scanner range. 
 In **SETTINGS**, select **Route cache** with PREV/NEXT, then use **< / >** to choose 32, 64, 128, 256, 512 or 1,024 retained routes. The default is 512. Changes are saved immediately; reducing the limit removes the least recently used entries first.
 
 **Auto-place worms** and **Use bone meal on current crop** are independent fleet-wide Settings toggles, initially on. Workers keep up to 16 Actually Additions worms and 64 bone meal, including bone meal collected from composters. They try worms in fresh single-block farmland-crop harvest gaps before replanting, at up to six distinct spots per minute; refused spots cool down for ten minutes. The mod itself rejects placement near existing worms. Workers use at most four bone meal per immature assigned plant, rechecking after each use and stopping on maturity, rejection or no visible progress. No extra crop rounds or off-round harvesting are introduced. Both behaviors are disabled in dry mode; switching an option off exports those supplies on the next normal unload.
+
+### Worker fuel methods
+
+Worker setup asks for `coal` (default), `energy`, or `auto`. Existing workers remain on coal unless changed. On a stopped worker, run `farm fuel` for the prompts, or:
+
+```
+farm fuel coal
+farm fuel energy mod:battery_item
+farm fuel auto mod:battery_item
+```
+
+Replace `mod:battery_item` with the actual item ID of your charged FE battery/cell, then run `farm start`. Energy and auto require a Weak Automata Core in inventory, an equipped diamond pickaxe, and an FE cell which permits energy extraction. FarmBot temporarily swaps the pickaxe for the core while charging, keeps the modem connected, and restores the pickaxe; interrupted swaps recover on startup. The core and configured battery are kept during unloading. Auto tries battery energy before falling back to coal. Energy mode never burns coal or collects it from fuel chests.
+
+Battery charging is not an automatic charger-station integration: recharge the carried cell externally when depleted. Coal chests continue supplying coal/auto workers as before. Charging normally tops up toward8000 movement fuel when the buffer falls below4000; per-call battery extraction limits may reduce the amount received.

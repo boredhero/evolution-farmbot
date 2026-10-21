@@ -11,6 +11,11 @@ if command=='inspect' then
   assert(turtle,'Use on a turtle')
   local method=args[2]=='down' and turtle.inspectDown or args[2]=='up' and turtle.inspectUp or turtle.inspect
   local ok,data=method();print(textutils.serialize(data));return
+elseif command=='fuel' then
+  assert(cfg.role=='worker','Only workers have fuel methods')
+  require('farm.lib.energy').recover()
+  require('farm.setup').fuel(cfg,args[2],args[3]);S.save('farm/config',cfg)
+  print('Fuel mode saved: '..cfg.fuelMode..'. Run farm start.');return
 elseif command=='mode' then
   assert(cfg.role=='worker','Only workers have an inspection mode')
   assert(args[2]=='live' or args[2]=='dry','Use farm mode live or farm mode dry')
@@ -50,7 +55,7 @@ elseif command=='station' then
   S.save('farm/config',cfg)
   print('Run farm start.');return
 elseif command=='config' then print(textutils.serialize(cfg));return
-elseif command~='start' then print('Commands: setup [role], start, update, mode live|dry, station output|fuel X Y Z, stations, inspect [up|down], config');return end
+elseif command~='start' then print('Commands: setup [role], start, update, fuel coal|energy|auto [battery_id], mode live|dry, station output|fuel X Y Z, stations, inspect [up|down], config');return end
 local function run()
   if cfg.role=='gps' then shell.run('gps','host',tostring(cfg.pos.x),tostring(cfg.pos.y),tostring(cfg.pos.z))
   elseif cfg.role=='controller' then require('farm.controller').run(cfg)

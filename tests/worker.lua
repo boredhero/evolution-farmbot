@@ -185,7 +185,7 @@ local function run(options)
     end
   end
   local cfg={controller=2,dock={x=0,y=1,z=0},dockHeading=1,
-    outputBlock='minecraft:chest',fuelBlock='minecraft:chest',fuelReserve=256,dryRun=options.dryRun}
+    outputBlock='minecraft:chest',fuelBlock='minecraft:chest',fuelReserve=256,dryRun=options.dryRun,fuelMode=options.fuelMode,batteryItem=options.batteryItem}
   if options.station then cfg.stations={output=options.station,fuel=options.station} end
   local ok,err=pcall(Worker.run,cfg)
   assert(not ok and (err==stop or options.loseResult),tostring(err))
@@ -394,4 +394,11 @@ do
  eq(dry.inventory[2].count,10);eq(dry.inventory[3].count,2)
  opts.dryRun=false;opts.rejectBoneMeal=true;local rejected=run(opts);eq(rejected.results[1].outcome,'growing');eq(rejected.inventory[2].count,10)
  print('PASS actual worker accelerates its assigned crop, places a worm in the harvest gap before replanting, respects both toggles and dry mode, and continues on rejected bone meal')
+end
+
+do
+ local r=run({jobs={},fuelMode='energy',batteryItem='test:battery',inventory={
+  [1]={name='advancedperipherals:weak_automata_core',count=1},[2]={name='test:battery',count=1},[3]={name='minecraft:coal',count=64}}})
+ eq(r.inventory[1].name,'advancedperipherals:weak_automata_core');eq(r.inventory[2].name,'test:battery');eq(r.inventory[3],nil)
+ print('PASS energy-mode unloading preserves core and battery while exporting unused coal')
 end

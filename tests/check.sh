@@ -41,5 +41,6 @@ lua tests/route_cache.lua
 lua tests/path_components.lua
 lua tests/mailbox.lua
 lua tests/fuel.lua
+lua tests/energy.lua
 lua tests/retries.lua
 lua tests/updater.lua

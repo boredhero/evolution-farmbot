@@ -25,8 +25,8 @@ function Worker.inventory()
 end
 local fuelItems=Fuel.values
 Worker.refuel=Fuel.refuel
-function Worker.compact()
-  Worker.refuel()
+function Worker.compact(cfg)
+  Worker.refuel(cfg)
   for source=2,16 do
     local item=turtle.getItemDetail(source)
     if item then
@@ -77,12 +77,13 @@ function Worker.calibrate()
 end
 function Worker.run(cfg)
   assert(turtle,'Run the worker on a turtle.')
+  require('farm.lib.energy').recover()
   cfg.session=tostring(os.getComputerID())..':'..tostring(os.epoch('utc'))
   local request=N.client(cfg)
   local saved=S.load('farm/data/worker',{pending=nil})
   if saved.commissioned==nil and ((saved.stations and saved.stations.output) or saved.pickupBatch) then saved.commissioned=true end
   saved.stats=saved.stats or {steps=0}
-  Worker.refuel()
+  Worker.refuel(cfg)
   local pos,heading=Worker.calibrate()
   local status='Starting';local active=false;local growthTools={}
   saved.worms=saved.worms or {}
@@ -318,7 +319,7 @@ function Worker.run(cfg)
       if not found or b.name~=cfg.outputBlock then return false,'Output chest missing or replaced; refusing to drop items' end
     end
     status='Unloading: '..(reason or 'Seed resupply')
-    Worker.refuel()
+    Worker.refuel(cfg)
     local plan,planError=rpc('seed_plan')
     if not plan then return false,planError end
     local kept,types={},0;local fuelKept=0
@@ -332,9 +333,9 @@ function Worker.run(cfg)
       local item=turtle.getItemDetail(slot)
       if item then
         turtle.select(slot)
-        if Soil.isHoe(turtle.getItemDetail(slot,true)) then
+        if Fuel.protected(cfg,item.name) or Soil.isHoe(turtle.getItemDetail(slot,true)) then
           -- Keep carried recovery tools; never export them as stray harvest drops.
-        elseif fuelItems[item.name] and turtle.getFuelLevel()~='unlimited' then
+        elseif fuelItems[item.name] and Fuel.mode(cfg)~='energy' and turtle.getFuelLevel()~='unlimited' then
           local keep=math.min(item.count,math.max(0,64-fuelKept));fuelKept=fuelKept+keep
           if item.count>keep and (not turtle['drop'..outputSide](item.count-keep) or turtle.getItemCount(slot)~=keep) then return false,'Output chest full' end
         elseif plan.seeds[item.name] then
@@ -361,21 +362,24 @@ function Worker.run(cfg)
     end
     local empty
     for slot=1,16 do if turtle.getItemCount(slot)==0 then empty=slot;break end end
-    if stations.fuel then
-      if empty and Fuel.needed() then
+    if Fuel.mode(cfg)=='energy' then
+      Fuel.refuel(cfg)
+    elseif stations.fuel then
+      if empty and Fuel.needed(cfg) then
         local ok,side=approach(stations.fuel,'fuel')
         if not ok then return false,side end
-        Fuel.fill(side)
+        Fuel.fill(side,cfg)
       end
     else
       -- The dedicated chest ABOVE the docking cell supplies coal/charcoal only.
       local fuelFound,fuelBlock=turtle.inspectUp()
-      if fuelFound and fuelBlock.name==cfg.fuelBlock and empty and Fuel.needed() then
-        Fuel.fill('Up')
+      if fuelFound and fuelBlock.name==cfg.fuelBlock and empty and Fuel.needed(cfg) then
+        Fuel.fill('Up',cfg)
       end
     end
     local level=turtle.getFuelLevel()
     if level~='unlimited' and level<cfg.fuelReserve then
+      if Fuel.mode(cfg)=='energy' then return false,Fuel.energyError or 'Recharge the configured battery; insufficient movement fuel' end
       return false,'Add coal/charcoal to the fuel chest at '..(stations.fuel and U.key(stations.fuel) or 'above this turtle')
     end
     -- Park at the home cell so the controller can confirm a clean stop.
@@ -617,7 +621,7 @@ function Worker.run(cfg)
         if not made then error('Craft recovery: '..tostring(reason),0) end
         needsDock='Craft recovery complete'
       end
-      Worker.compact()
+      Worker.compact(cfg)
       local control=rpc('control')
       if control and control.growthTools then growthTools=control.growthTools end
       if control and control.recover and control.recover~=cfg.recoverAck then

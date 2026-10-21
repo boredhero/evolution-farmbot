@@ -1,1 +1,1 @@
-{"version": "0.6.9", "notes": "Allow shared nonrecursive tables in durable saves so nested crop-access recovery does not pause workers."}
+{"version": "0.7.0", "notes": "Worker fuel setup and command: coal, energy or automatic fallback; retained FE battery and Automata Core with recoverable pickaxe swaps."}

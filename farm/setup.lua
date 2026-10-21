@@ -42,6 +42,21 @@ function Setup.pair(cfg)
   cfg.group=input('Farm network name (must match the controller exactly)',cfg.group or 'noah-farm')
   cfg.controller=cfg.controller or number('Controller computer ID')
 end
+function Setup.fuel(cfg,mode,battery)
+  while not mode do
+    local value=input('Fuel method: coal, energy, auto',cfg.fuelMode or 'coal')
+    if value=='coal' or value=='energy' or value=='auto' then mode=value else print('Choose coal, energy or auto.') end
+  end
+  assert(mode=='coal' or mode=='energy' or mode=='auto','Use coal, energy or auto')
+  if mode~='coal' then
+    print('Carry a Weak Automata Core and charged FE cell.')
+    print('Battery must support energy extraction; recharge externally.')
+    battery=battery or input('Battery item ID',cfg.batteryItem)
+    assert(type(battery)=='string' and battery:match('^[%w_]+:[%w_./]+$'),'Enter the battery item ID, e.g. mod:item')
+    cfg.batteryItem=battery
+  end
+  cfg.fuelMode=mode
+end
 function Setup.run(role)
   print('Evolution FarmBot setup - computer ID '..os.getComputerID())
   role=role or input('Role: controller, worker, gps',turtle and 'worker' or 'controller')
@@ -74,12 +89,14 @@ function Setup.run(role)
     -- Older CC builds may not expose equipped-item detail. The installer guide covers this.
     if not tool then print('Ensure this is a Mining Turtle (diamond pickaxe) with an Ender Modem.') end
     if cfg.stations and cfg.stations.output then print('Using this farm\'s shared output/fuel chests.') end
-    print('Put coal/charcoal in the turtle. Leave an empty horizontal neighbor.')
+    Setup.fuel(cfg)
+    print(cfg.fuelMode=='energy' and 'Put the core and charged battery in inventory.' or 'Put coal/charcoal in inventory (auto also uses a battery).')
+    print('Leave an empty horizontal neighbor.')
     input('Press Enter when ready','')
-    require('farm.worker').refuel()
+    require('farm.worker').refuel(cfg)
     if not cfg.stations or not cfg.stations.output then
     cfg.stations={output=position('Chest/ME interface to PUT harvested items into')}
-    if input('Is there a separate chest to TAKE fuel from? yes/no','yes')~='no' then
+    if cfg.fuelMode~='energy' and input('Is there a separate chest to TAKE fuel from? yes/no','yes')~='no' then
       cfg.stations.fuel=position('Chest to TAKE coal/charcoal from')
     end
     end
