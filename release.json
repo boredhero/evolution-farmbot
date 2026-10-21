@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "version": "0.6.4",
-  "ref": "v0.6.4",
-  "notes": "Harvest Biomes We Have Gone pale pumpkin fruit while preserving growing and attached stems.",
+  "version": "0.6.5",
+  "ref": "v0.6.5",
+  "notes": "Optional reversible string crates in fleet compacting settings using existing Crafters.",
   "files": [
     {"path": "LICENSE", "size": 35149, "adler32": "f70779ec"},
     {"path": "NOTICE", "size": 691, "adler32": "ad64ed8d"},
@@ -14,7 +14,7 @@
     {"path": "farm/lib/checksum.lua", "size": 369, "adler32": "68cb76fa"},
     {"path": "farm/lib/command_history.lua", "size": 933, "adler32": "161638a1"},
     {"path": "farm/lib/compact_crafting.lua", "size": 3575, "adler32": "0a82ccff"},
-    {"path": "farm/lib/compacting.lua", "size": 1801, "adler32": "a54678db"},
+    {"path": "farm/lib/compacting.lua", "size": 1914, "adler32": "a599a254"},
     {"path": "farm/lib/compost.lua", "size": 2713, "adler32": "243c8801"},
     {"path": "farm/lib/crafting.lua", "size": 2603, "adler32": "b6787b5e"},
     {"path": "farm/lib/crop_access.lua", "size": 1050, "adler32": "d2b55d14"},

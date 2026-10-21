@@ -56,3 +56,10 @@ run();run({disabled=true});run({foreign=true});run({fail=true})
 for n=1,9 do run({crashAfter=n}) end
 run({crashOutput=true})
 print('PASS compacting protects planting stock, defaults off, balances nine inputs, rolls back disabled/failed recipes, and resumes every interrupted insertion/output without duplicate consumption')
+
+assert(#M.plan({}, {['minecraft:string']=64},{},{})==0)
+local strings=M.plan({string=true},{['minecraft:string']=64},{['minecraft:string']=10},{})
+assert(#strings==1 and strings[1].batches==6 and strings[1].inputCount==9)
+assert(strings[1].item=='minecraft:string' and strings[1].output=='compressedblocks:crated_string')
+assert(#M.plan({string=true},{['minecraft:string']=8},{},{})==0)
+print('PASS optional string crates use nine string per batch, preserve reserves and leave leftovers loose')

@@ -1975,6 +1975,7 @@ M.recipes={
  {key='rice',label='Rice -> rice bags',item='farmersdelight:rice',output='farmersdelight:rice_bag'},
  {key='panicle',label='Rice panicles -> rice bales',item='farmersdelight:rice_panicle',output='farmersdelight:rice_bale'},
  {key='straw',label='Straw -> straw bales',item='farmersdelight:straw',output='farmersdelight:straw_bale'},
+ {key='string',label='String -> string crates',item='minecraft:string',output='compressedblocks:crated_string'},
 }
 function M.plan(settings,inventory,keep,needed)
   local out={};local reserve={}
@@ -4748,7 +4749,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.6.4\", \"ref\": \"v0.6.4\"}\
+["farm/version.json"] = "{\"version\": \"0.6.5\", \"ref\": \"v0.6.5\"}\
 ",
 }
 local args={...}

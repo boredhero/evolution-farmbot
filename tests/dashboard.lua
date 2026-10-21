@@ -167,7 +167,8 @@ for _,size in ipairs({{51,19},{164,81}}) do
 end
 print('PASS fleet compacting settings use bottom-row controls, persist through the shared model and fit normal computer and large monitor sizes')
 
-for index,key in pairs({[10]='autoWorms',[11]='autoBoneMeal'}) do
+for offset,key in ipairs({'autoWorms','autoBoneMeal'}) do
+ local index=#require('farm.lib.compacting').recipes+1+offset
  local view={settings=true,setting=index};m.settings={[key]=true}
  local _,hits=d:render(m,view,51,19);d.views.growth=view;d.hits.growth=hits
  local toggled=false
@@ -177,3 +178,13 @@ for index,key in pairs({[10]='autoWorms',[11]='autoBoneMeal'}) do
  assert(toggled)
 end
 print('PASS independent worm and bone-meal settings toggle from reachable bottom-row controls')
+
+local recipes=require('farm.lib.compacting').recipes
+local view={settings=true,setting=#recipes};m.settings={compacting={}}
+local frame,hits=d:render(m,view,51,19);d.views.strings=view;d.hits.strings=hits
+assert(contains(frame,'String -> string crates'))
+local toggled=false
+for _,hit in ipairs(hits) do if hit.action=='compact' then
+ assert(d:touch('strings',hit.x,hit.y,m));toggled=true
+end end
+assert(toggled and m.settings.compacting.string)

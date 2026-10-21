@@ -63,3 +63,5 @@ Follow-up evidence after v0.5.3 deployment: live routes to shared docks can stil
 39. Separate fleet Settings toggles for both growth tools, default on; preserve explicit off and dry mode. Deployed v0.6.3 to 4/8/9/10/21; full suite and all public/runtime hash checks pass. Live controller confirms both toggles true and cache512; fleet running. Live workers9 and21 each confirmed one bone-meal use. Worm placement still awaits a carried worm at a suitable harvest gap.
 
 40. Harvest planted BWG pale pumpkins: recognize fruit as its own fleet crop round; preserve growing/attached stems and carved decorations. Deployed v0.6.4 to controller4 and workers8/9/10/21; full suite passed, public main/tag installer and all runtime hashes verified, all five computers running. Backup: /home/noah/minecraft/farmbot-backups/pale-pumpkin-v064-20261021-010820. Actual fruit harvest not yet observed.
+
+41. Optional string bundling through existing Crafters: nine string to one reversible string crate. Implementation and tests in v0.6.5; deployment pending.

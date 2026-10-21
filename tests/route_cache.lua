@@ -11,7 +11,7 @@ R.trim(cache,32);local n=0;for _ in pairs(cache) do n=n+1 end
 assert(n==32 and cache['1'] and cache['1024'] and not cache['992'])
 cache.new={used=2049};R.trim(cache,32);assert(cache.new and not cache['994'])
 for _,size in ipairs({{51,19},{164,81}}) do
- local d=D.new();local v=d:view('settings');v.settings=true;v.setting=9
+ local d=D.new();local v=d:view('settings');v.settings=true;v.setting=#require('farm.lib.compacting').recipes+1
  local function click(delta)
   local _,hits=d:render(m,v,size[1],size[2]);d.hits.settings=hits
   for _,hit in ipairs(hits) do

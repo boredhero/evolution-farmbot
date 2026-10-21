@@ -11,6 +11,7 @@ M.recipes={
  {key='rice',label='Rice -> rice bags',item='farmersdelight:rice',output='farmersdelight:rice_bag'},
  {key='panicle',label='Rice panicles -> rice bales',item='farmersdelight:rice_panicle',output='farmersdelight:rice_bale'},
  {key='straw',label='Straw -> straw bales',item='farmersdelight:straw',output='farmersdelight:straw_bale'},
+ {key='string',label='String -> string crates',item='minecraft:string',output='compressedblocks:crated_string'},
 }
 function M.plan(settings,inventory,keep,needed)
   local out={};local reserve={}
