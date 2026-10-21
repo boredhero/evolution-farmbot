@@ -122,7 +122,7 @@ function Controller.run(cfg)
     if path then
       if #parts>0 then
         local count=0;for _ in pairs(cache) do count=count+1 end
-        if count>=128 and not cache[key] then
+        if count>=1024 and not cache[key] then
           local oldest,used;for k,r in pairs(cache) do if not used or (r.used or 0)<used then oldest,used=k,r.used or 0 end end
           if oldest then cache[oldest]=nil end
         end

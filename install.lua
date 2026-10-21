@@ -899,7 +899,7 @@ function Controller.run(cfg)
     if path then
       if #parts>0 then
         local count=0;for _ in pairs(cache) do count=count+1 end
-        if count>=128 and not cache[key] then
+        if count>=1024 and not cache[key] then
           local oldest,used;for k,r in pairs(cache) do if not used or (r.used or 0)<used then oldest,used=k,r.used or 0 end end
           if oldest then cache[oldest]=nil end
         end
@@ -1540,9 +1540,10 @@ function D:render(m,v,w,h)
       elseif p.x%8==0 and p.z%8==0 then ch='+';fg='7' end
       f:write(mx+dx,my+dy,ch,fg,bg)
     end end
-    local drawn=0
+    local drawn,routesDrawn=0,0
     if v.cache~=false then
       for _,route in pairs(m.cache) do
+        routesDrawn=routesDrawn+1;if routesDrawn>128 then break end
         for _,p in ipairs(route.path) do
           if drawn>=16000 then break end;drawn=drawn+1
           if p.y==layer or p.y==layer+1 then local px,py=point(p);if px then f:write(px,py,':','7') end end
@@ -4623,7 +4624,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.6.0\", \"ref\": \"v0.6.0\"}\
+["farm/version.json"] = "{\"version\": \"0.6.1\", \"ref\": \"v0.6.1\"}\
 ",
 }
 local args={...}
