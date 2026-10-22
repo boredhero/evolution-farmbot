@@ -65,6 +65,9 @@ local function run(options)
     end
     turtle['place'..side]=function()
       local k=U.key(target(side))
+      if options.sheep and inv[selected] and inv[selected].name=='minecraft:shears' then
+        assert(side=='Down');events[#events+1]='shear';if not options.bareSheep then add('minecraft:white_wool',2) end;return not options.bareSheep
+      end
       if inv[selected] and inv[selected].name=='minecraft:bone_meal' then
         events[#events+1]='bonemeal:'..k
         if not options.rejectBoneMeal then
@@ -149,6 +152,7 @@ local function run(options)
       if kind=='craft_done' then return {ok=true} end
       if kind=='craft_station' and options.compact then return {pos={x=3,y=1,z=1}} end
       if kind=='craft_station' then return nil,'No available Crafter in scanner coverage' end
+      if kind=='sheep' then return options.goneSheep and {gone=true} or {pos=options.movedSheep or data.job.pos} end
       if kind=='step' then return {ok=true} end
       if kind=='control' then return {recover=options.recover and 1 or nil,growthTools=options.growthTools} end
       if kind=='hello' then return {active=true} end
@@ -405,4 +409,17 @@ do
   [1]={name='advancedperipherals:weak_automata_core',count=1},[2]={name='test:battery',count=1},[3]={name='minecraft:coal',count=64}}})
  eq(r.inventory[1].name,'advancedperipherals:weak_automata_core');eq(r.inventory[2].name,'test:battery');eq(r.inventory[3],nil)
  print('PASS energy-mode unloading preserves core and battery while exporting unused coal')
+end
+
+do
+  local j={key='sheep:uuid',roundKey='sheep:uuid',uuid='uuid',pos={x=2,y=1,z=0},name='minecraft:sheep',mode='sheep',onlyAbove=true,tool='minecraft:shears'}
+  for _,mode in ipairs({'live','dry','bare','gone','moved'}) do
+    local r=run({jobs={j},sheep=true,dryRun=mode=='dry',bareSheep=mode=='bare',goneSheep=mode=='gone',
+      movedSheep=mode=='moved' and {x=3,y=1,z=0} or nil,inventory={[1]={name='minecraft:shears',count=1}}})
+    eq(r.results[1].outcome,mode=='dry' and 'dry_run' or mode=='bare' and 'growing' or mode=='gone' and 'changed' or 'harvested')
+    assert(r.results[1].after==nil,'Sheep must not alter block occupancy or replant records')
+    assert(r.inventory[1] and r.inventory[1].name=='minecraft:shears','Keep shears during unload')
+    for _,e in ipairs(r.events) do assert(not e:match('^dig:') and not e:match('^plant:'),'Sheep must never be mined or replanted') end
+  end
+  print('PASS worker shears moving sheep, retains tools, respects dry mode and preserves world block state')
 end

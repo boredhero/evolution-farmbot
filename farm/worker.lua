@@ -10,6 +10,7 @@ local CompactCraft=require('farm.lib.compact_crafting')
 local Compost=require('farm.lib.compost')
 local Pickup=require('farm.lib.pickup')
 local Soil=require('farm.lib.soil')
+local Sheep=require('farm.lib.sheep')
 local Vines=require('farm.lib.vines')
 local Traffic=require('farm.lib.traffic')
 local Fuel=require('farm.lib.fuel')
@@ -333,7 +334,7 @@ function Worker.run(cfg)
       local item=turtle.getItemDetail(slot)
       if item then
         turtle.select(slot)
-        if Fuel.protected(cfg,item.name) or Soil.isHoe(turtle.getItemDetail(slot,true)) then
+        if item.name=='minecraft:shears' or Fuel.protected(cfg,item.name) or Soil.isHoe(turtle.getItemDetail(slot,true)) then
           -- Keep carried recovery tools; never export them as stray harvest drops.
         elseif fuelItems[item.name] and Fuel.mode(cfg)~='energy' and turtle.getFuelLevel()~='unlimited' then
           local keep=math.min(item.count,math.max(0,64-fuelKept));fuelKept=fuelKept+keep
@@ -480,6 +481,22 @@ function Worker.run(cfg)
     return true
   end
   local function harvest(job,token,nested)
+    if job.mode=='sheep' then
+      for _=1,3 do
+        local current,err=request('sheep',{job=job,token=token})
+        if not current then return 'error',err end
+        if current.gone then return 'changed','Sheep left detector coverage' end
+        job.pos=current.pos
+        local above=U.add(job.pos,U.dirs[5])
+        if U.equal(pos,above) then
+          if cfg.dryRun then return 'dry_run','Sheep located; no shears used' end
+          return Sheep.shear()
+        end
+        local reached,why=navigate({above},false,nil,job)
+        if not reached then return 'unreachable',why end
+      end
+      return 'changed','Sheep kept moving; retry in the next round'
+    end
     local block,side=inspect(job.pos)
     if job.repair then
       if block then return 'occupied','Adopting the block already here',block.state end
@@ -670,7 +687,7 @@ function Worker.run(cfg)
             if reply.path and home then needsDock='Fuel reserve for next job'
             else status=not home and tostring(homeError) or 'Waiting for a route';sleep(1) end
           else
-            status=(cfg.dryRun and 'Inspecting ' or 'Farming ')..job.name:gsub('^[^:]+:',''):gsub('_',' ')
+            status=(cfg.dryRun and 'Inspecting ' or (job.mode=='sheep' and 'Shearing ' or 'Farming '))..job.name:gsub('^[^:]+:',''):gsub('_',' ')
             local reached,why=navigate(Vines.goals(job),false,reply.path,job)
             if reached and job.vines and #job.vines>0 then
               for _,target in ipairs(job.vines) do
@@ -682,7 +699,8 @@ function Worker.run(cfg)
             if reached then
               local outcome,detail,blockState=harvest(job,reply.token)
               local after
-              if U.distance(pos,job.pos)==1 then after=inspect(job.pos) or false
+              if job.mode=='sheep' then after=nil
+              elseif U.distance(pos,job.pos)==1 then after=inspect(job.pos) or false
               elseif outcome=='harvested' and job.mode=='cane' then after=false end
               local recorded,recordError=rpc('result',{job=job,token=reply.token,outcome=outcome,
                 detail=detail,state=blockState,after=after})

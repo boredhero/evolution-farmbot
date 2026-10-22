@@ -20,6 +20,7 @@ local Mailbox=require('farm.lib.mailbox')
 local Dashboard=require('farm.dashboard')
 local CommandHistory=require('farm.lib.command_history')
 local Players=require('farm.lib.players')
+local Sheep=require('farm.lib.sheep')
 local Hardware=require('farm.lib.hardware')
 local Help=require('farm.lib.help')
 local Batches=require('farm.lib.batches')
@@ -52,6 +53,7 @@ function Controller.run(cfg)
   local dashboardError
   local world=W.new(cfg.center,cfg.radius)
   local jobs,workers,leases,obstacles,responses,cache={},{},{},{},{},{}
+  local sheepTracker=Sheep.new()
   local craftLocks={}
   local function hasCrafter()
     return state.crafters and #state.crafters>0
@@ -244,6 +246,15 @@ function Controller.run(cfg)
     elseif m.kind=='craft_done' then
       for key,lock in pairs(craftLocks) do if lock.owner==id then craftLocks[key]=nil end end
       return {ok=true}
+    elseif m.kind=='sheep' then
+      if not state.active or not fresh() then return nil,'Paused or waiting for fresh survey' end
+      local l=d.job and leases[d.job.key]
+      if not l or l.owner~=id or l.token~=d.token or l.job.mode~='sheep' then return nil,'No matching sheep assignment' end
+      local list,err=sheepTracker:poll(world,U.now())
+      if err then return nil,err end
+      local current=list[l.job.key]
+      if not current then return {gone=true} end
+      return {pos=current.pos}
     elseif m.kind=='control' then
       return {recover=cfg.workerRecover and cfg.workerRecover[tostring(id)],growthTools={autoWorms=state.settings.autoWorms,autoBoneMeal=state.settings.autoBoneMeal}}
     elseif m.kind=='step' then return Traffic.claim(workers,id,d.pos,d.target,U.now())
@@ -277,6 +288,7 @@ function Controller.run(cfg)
       local l=j and leases[j.key]
       if not l or l.owner~=id or l.token~=d.token then return {ok=true,stale=true} end
       leases[j.key]=nil;Batches.finished(state.batches,id,j)
+      if j.mode=='sheep' then d.after=nil end
       if d.after~=nil then
         world:observe(j.pos,d.after)
         if d.outcome=='harvested' and j.mode=='cane' and j.rootY then
@@ -457,12 +469,16 @@ function Controller.run(cfg)
     return lines
   end
   local playerTracker=Players.new()
-  local playerList={}
+  local playerList={};local sheepAt=0
   -- Polled apart from drawing so detector latency never stalls a monitor redraw.
   local function playerLoop()
     while true do
       local ok,list=pcall(function() return playerTracker:poll(cfg.center,cfg.radius) end)
       playerList=ok and list or {}
+      if U.now()>=sheepAt and lastScan>0 then
+        local sheep=sheepTracker:poll(world,U.now())
+        Sheep.sync(garden,sheep,leases,U.now());sheepAt=U.now()+5
+      end
       sleep(0.5)
     end
   end
@@ -471,7 +487,7 @@ function Controller.run(cfg)
     local s=summary()
     return {settings=state.settings,now=U.now(),active=state.active,world=world,center=cfg.center,radius=cfg.radius,version=installedVersion,
       plots=garden.data.plots,history=state.history,growth=state.growth,excluded=state.excluded,workers=workers,
-      players=playerList,playerError=playerTracker.error,
+      players=playerList,playerError=playerTracker.error,sheepError=sheepTracker.error,
       cache=cache,cacheHits=hits,metrics=metrics.data,sessionUptime=U.now()-metrics.started,
       scanAge=s.scanAge,scanError=scanError,freshFor=cfg.scanInterval*3}
   end

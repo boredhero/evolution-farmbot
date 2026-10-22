@@ -63,7 +63,7 @@ function Hardware.lines(env,context)
       or note(f.player,'optional; enables the map player overlay'))
   add('Environment Detector',f.environment or 'not attached',
     f.environment and (context.dimension or 'dimension not read yet')
-      or note(f.environment,'optional; filters players in other dimensions'))
+      or note(f.environment,'optional; sheep detection and player dimension'))
   if #f.other>0 then add('Other peripherals',table.concat(f.other,', ')) end
   if context.group then add('Farm network name',context.group,'workers pair to this automatically') end
   if context.gps then add('GPS position',context.gps) end

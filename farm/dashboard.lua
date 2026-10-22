@@ -352,6 +352,7 @@ function D:render(m,v,w,h)
     f:write(3,11,('Scans %d | Errors %d | Routes %d / hits %d'):format(metrics.scans,metrics.errors,count(m.cache),m.cacheHits),'0')
     local ids={};for id in pairs(m.workers) do ids[#ids+1]=id end;table.sort(ids)
     local y=13
+    if m.sheepError then f:write(3,12,'SHEEP / '..m.sheepError,'8') end
     f:write(3,y,'FLEET / POSITION / FUEL / CURRENT TASK','3');y=y+1
     for i,id in ipairs(ids) do if i<=4 then
       local worker=m.workers[id];local online=m.now-worker.seen<30

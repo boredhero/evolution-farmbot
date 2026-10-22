@@ -23,7 +23,7 @@ end
 function G:scan(world,jobs,started,now,custom)
   -- Never reconcile a scan begun before a mutation against that mutation.
   for k,p in pairs(self.data.plots) do
-    if p.updated<=started and not (p.intent and p.intent.expires>now) then
+    if p.job.mode~='sheep' and p.updated<=started and not (p.intent and p.intent.expires>now) then
       local j=jobs[k]
       if j then self:observe(j,now)
       else
@@ -131,7 +131,7 @@ function G:tasks(inventory,stock,now,dryRun)
         if (inventory[j.seed] or 0)>0 or (stock[j.seed] or 0)>0 then
           j.repair=true;j.fetchSeed=(inventory[j.seed] or 0)==0;tasks[#tasks+1]=j
         end
-      elseif p.live then
+      elseif p.live and (not j.tool or (inventory[j.tool] or 0)>0 or dryRun) then
         local available=(inventory[j.seed] or 0)>0
         local allowed=dryRun or not j.seed or available or j.guaranteedSeed or (living[j.seed] or 0)>1
         if not allowed and (stock[j.seed] or 0)>0 then allowed=true;j.fetchSeed=true end

@@ -802,6 +802,7 @@ local Mailbox=require('farm.lib.mailbox')
 local Dashboard=require('farm.dashboard')
 local CommandHistory=require('farm.lib.command_history')
 local Players=require('farm.lib.players')
+local Sheep=require('farm.lib.sheep')
 local Hardware=require('farm.lib.hardware')
 local Help=require('farm.lib.help')
 local Batches=require('farm.lib.batches')
@@ -834,6 +835,7 @@ function Controller.run(cfg)
   local dashboardError
   local world=W.new(cfg.center,cfg.radius)
   local jobs,workers,leases,obstacles,responses,cache={},{},{},{},{},{}
+  local sheepTracker=Sheep.new()
   local craftLocks={}
   local function hasCrafter()
     return state.crafters and #state.crafters>0
@@ -1026,6 +1028,15 @@ function Controller.run(cfg)
     elseif m.kind=='craft_done' then
       for key,lock in pairs(craftLocks) do if lock.owner==id then craftLocks[key]=nil end end
       return {ok=true}
+    elseif m.kind=='sheep' then
+      if not state.active or not fresh() then return nil,'Paused or waiting for fresh survey' end
+      local l=d.job and leases[d.job.key]
+      if not l or l.owner~=id or l.token~=d.token or l.job.mode~='sheep' then return nil,'No matching sheep assignment' end
+      local list,err=sheepTracker:poll(world,U.now())
+      if err then return nil,err end
+      local current=list[l.job.key]
+      if not current then return {gone=true} end
+      return {pos=current.pos}
     elseif m.kind=='control' then
       return {recover=cfg.workerRecover and cfg.workerRecover[tostring(id)],growthTools={autoWorms=state.settings.autoWorms,autoBoneMeal=state.settings.autoBoneMeal}}
     elseif m.kind=='step' then return Traffic.claim(workers,id,d.pos,d.target,U.now())
@@ -1059,6 +1070,7 @@ function Controller.run(cfg)
       local l=j and leases[j.key]
       if not l or l.owner~=id or l.token~=d.token then return {ok=true,stale=true} end
       leases[j.key]=nil;Batches.finished(state.batches,id,j)
+      if j.mode=='sheep' then d.after=nil end
       if d.after~=nil then
         world:observe(j.pos,d.after)
         if d.outcome=='harvested' and j.mode=='cane' and j.rootY then
@@ -1239,12 +1251,16 @@ function Controller.run(cfg)
     return lines
   end
   local playerTracker=Players.new()
-  local playerList={}
+  local playerList={};local sheepAt=0
   -- Polled apart from drawing so detector latency never stalls a monitor redraw.
   local function playerLoop()
     while true do
       local ok,list=pcall(function() return playerTracker:poll(cfg.center,cfg.radius) end)
       playerList=ok and list or {}
+      if U.now()>=sheepAt and lastScan>0 then
+        local sheep=sheepTracker:poll(world,U.now())
+        Sheep.sync(garden,sheep,leases,U.now());sheepAt=U.now()+5
+      end
       sleep(0.5)
     end
   end
@@ -1253,7 +1269,7 @@ function Controller.run(cfg)
     local s=summary()
     return {settings=state.settings,now=U.now(),active=state.active,world=world,center=cfg.center,radius=cfg.radius,version=installedVersion,
       plots=garden.data.plots,history=state.history,growth=state.growth,excluded=state.excluded,workers=workers,
-      players=playerList,playerError=playerTracker.error,
+      players=playerList,playerError=playerTracker.error,sheepError=sheepTracker.error,
       cache=cache,cacheHits=hits,metrics=metrics.data,sessionUptime=U.now()-metrics.started,
       scanAge=s.scanAge,scanError=scanError,freshFor=cfg.scanInterval*3}
   end
@@ -1741,6 +1757,7 @@ function D:render(m,v,w,h)
     f:write(3,11,('Scans %d | Errors %d | Routes %d / hits %d'):format(metrics.scans,metrics.errors,count(m.cache),m.cacheHits),'0')
     local ids={};for id in pairs(m.workers) do ids[#ids+1]=id end;table.sort(ids)
     local y=13
+    if m.sheepError then f:write(3,12,'SHEEP / '..m.sheepError,'8') end
     f:write(3,y,'FLEET / POSITION / FUEL / CURRENT TASK','3');y=y+1
     for i,id in ipairs(ids) do if i<=4 then
       local worker=m.workers[id];local online=m.now-worker.seen<30
@@ -2746,7 +2763,7 @@ end
 function G:scan(world,jobs,started,now,custom)
   -- Never reconcile a scan begun before a mutation against that mutation.
   for k,p in pairs(self.data.plots) do
-    if p.updated<=started and not (p.intent and p.intent.expires>now) then
+    if p.job.mode~='sheep' and p.updated<=started and not (p.intent and p.intent.expires>now) then
       local j=jobs[k]
       if j then self:observe(j,now)
       else
@@ -2854,7 +2871,7 @@ function G:tasks(inventory,stock,now,dryRun)
         if (inventory[j.seed] or 0)>0 or (stock[j.seed] or 0)>0 then
           j.repair=true;j.fetchSeed=(inventory[j.seed] or 0)==0;tasks[#tasks+1]=j
         end
-      elseif p.live then
+      elseif p.live and (not j.tool or (inventory[j.tool] or 0)>0 or dryRun) then
         local available=(inventory[j.seed] or 0)>0
         local allowed=dryRun or not j.seed or available or j.guaranteedSeed or (living[j.seed] or 0)>1
         if not allowed and (stock[j.seed] or 0)>0 then allowed=true;j.fetchSeed=true end
@@ -3025,7 +3042,7 @@ function Hardware.lines(env,context)
       or note(f.player,'optional; enables the map player overlay'))
   add('Environment Detector',f.environment or 'not attached',
     f.environment and (context.dimension or 'dimension not read yet')
-      or note(f.environment,'optional; filters players in other dimensions'))
+      or note(f.environment,'optional; sheep detection and player dimension'))
   if #f.other>0 then add('Other peripherals',table.concat(f.other,', ')) end
   if context.group then add('Farm network name',context.group,'workers pair to this automatically') end
   if context.gps then add('GPS position',context.gps) end
@@ -3771,6 +3788,72 @@ function Seeds.deliver(sourceName,bufferName,itemName)
 end
 return Seeds
 ]=],
+["farm/lib/sheep.lua"] = [=[
+-- SPDX-License-Identifier: GPL-3.0-only
+-- Copyright (C) 2026 boredhero
+local U=require('farm.lib.util')
+local H={};H.__index=H
+function H.new()return setmetatable({list={},checked=-math.huge},H)end
+function H:poll(world,now)
+  if self.busy then return nil,'Entity scan in progress' end
+  if now-self.checked<2.1 then
+    if self.error then return nil,self.error end
+    return self.list
+  end
+  self.checked=now
+  local detector=peripheral.find('environment_detector')
+  if not detector or not detector.scanEntities then self.error='Attach an Environment Detector';return nil,self.error end
+  local origin
+  for _,b in pairs(world.blocks) do if b.name=='advancedperipherals:environment_detector' then
+    if origin then self.error='Sheep detection requires one surveyed Environment Detector';return nil,self.error end
+    origin=b
+  end end
+  if not origin then self.error='Environment Detector must be inside scanner coverage';return nil,self.error end
+  -- AP 0.8 returns world-axis offsets from the detector block CENTER.
+  self.busy=true
+  local ok,entities,err=pcall(detector.scanEntities,math.min(16,world.radius),false,'minecraft:sheep')
+  self.busy=false
+  if not ok or type(entities)~='table' then self.error=tostring(ok and err or entities);return nil,self.error end
+  self.list={}
+  for _,e in ipairs(entities) do
+    if e.name=='minecraft:sheep' and e.uuid and not e.baby and type(e.x)=='number' and type(e.y)=='number' and type(e.z)=='number' then
+      local p={x=math.floor(origin.x+0.5+e.x),y=math.floor(origin.y+0.5+e.y)+1,z=math.floor(origin.z+0.5+e.z)}
+      if world:inside(p) and world:inside(U.add(p,U.dirs[5])) then
+        local key='sheep:'..e.uuid
+        self.list[key]={key=key,roundKey=key,uuid=e.uuid,pos=p,name='minecraft:sheep',crop='minecraft:sheep',mode='sheep',onlyAbove=true,tool='minecraft:shears'}
+      end
+    end
+  end
+  self.error=nil;return self.list
+end
+function H.sync(garden,list,leases,now)
+  if not list then return end
+  for key,p in pairs(garden.data.plots) do if p.job.mode=='sheep' and not list[key] and not leases[key] then garden.data.plots[key]=nil end end
+  for key,j in pairs(list) do
+    local p=garden.data.plots[key]
+    if not p then garden:observe(j,now)
+    elseif not leases[key] then p.job=j;p.updated=now end
+  end
+end
+function H.wool()
+  local n=0
+  for i=1,16 do local d=turtle.getItemDetail(i);if d and d.name:match('_wool$') then n=n+d.count end end
+  return n
+end
+-- No attacks or digs: a moved, bare, or baby sheep simply yields no wool.
+function H.shear()
+  local slot
+  for i=1,16 do local d=turtle.getItemDetail(i);if d and d.name=='minecraft:shears' then slot=i;break end end
+  if not slot then return 'missing_tool','Carry shears for sheep rounds' end
+  if turtle.inspectDown() then return 'unreachable','Block below prevents safe sheep interaction' end
+  local before=H.wool();turtle.select(slot)
+  local ok,err=turtle.placeDown()
+  if not turtle.inspectDown() then turtle.suckDown() end
+  if ok and H.wool()>before then return 'harvested' end
+  return 'growing',ok and 'No wool collected' or tostring(err or 'Sheep moved or has no wool')
+end
+return H
+]=],
 ["farm/lib/soil.lua"] = [=[
 -- SPDX-License-Identifier: GPL-3.0-only
 -- Copyright (C) 2026 boredhero
@@ -4360,6 +4443,7 @@ local CompactCraft=require('farm.lib.compact_crafting')
 local Compost=require('farm.lib.compost')
 local Pickup=require('farm.lib.pickup')
 local Soil=require('farm.lib.soil')
+local Sheep=require('farm.lib.sheep')
 local Vines=require('farm.lib.vines')
 local Traffic=require('farm.lib.traffic')
 local Fuel=require('farm.lib.fuel')
@@ -4683,7 +4767,7 @@ function Worker.run(cfg)
       local item=turtle.getItemDetail(slot)
       if item then
         turtle.select(slot)
-        if Fuel.protected(cfg,item.name) or Soil.isHoe(turtle.getItemDetail(slot,true)) then
+        if item.name=='minecraft:shears' or Fuel.protected(cfg,item.name) or Soil.isHoe(turtle.getItemDetail(slot,true)) then
           -- Keep carried recovery tools; never export them as stray harvest drops.
         elseif fuelItems[item.name] and Fuel.mode(cfg)~='energy' and turtle.getFuelLevel()~='unlimited' then
           local keep=math.min(item.count,math.max(0,64-fuelKept));fuelKept=fuelKept+keep
@@ -4830,6 +4914,22 @@ function Worker.run(cfg)
     return true
   end
   local function harvest(job,token,nested)
+    if job.mode=='sheep' then
+      for _=1,3 do
+        local current,err=request('sheep',{job=job,token=token})
+        if not current then return 'error',err end
+        if current.gone then return 'changed','Sheep left detector coverage' end
+        job.pos=current.pos
+        local above=U.add(job.pos,U.dirs[5])
+        if U.equal(pos,above) then
+          if cfg.dryRun then return 'dry_run','Sheep located; no shears used' end
+          return Sheep.shear()
+        end
+        local reached,why=navigate({above},false,nil,job)
+        if not reached then return 'unreachable',why end
+      end
+      return 'changed','Sheep kept moving; retry in the next round'
+    end
     local block,side=inspect(job.pos)
     if job.repair then
       if block then return 'occupied','Adopting the block already here',block.state end
@@ -5020,7 +5120,7 @@ function Worker.run(cfg)
             if reply.path and home then needsDock='Fuel reserve for next job'
             else status=not home and tostring(homeError) or 'Waiting for a route';sleep(1) end
           else
-            status=(cfg.dryRun and 'Inspecting ' or 'Farming ')..job.name:gsub('^[^:]+:',''):gsub('_',' ')
+            status=(cfg.dryRun and 'Inspecting ' or (job.mode=='sheep' and 'Shearing ' or 'Farming '))..job.name:gsub('^[^:]+:',''):gsub('_',' ')
             local reached,why=navigate(Vines.goals(job),false,reply.path,job)
             if reached and job.vines and #job.vines>0 then
               for _,target in ipairs(job.vines) do
@@ -5032,7 +5132,8 @@ function Worker.run(cfg)
             if reached then
               local outcome,detail,blockState=harvest(job,reply.token)
               local after
-              if U.distance(pos,job.pos)==1 then after=inspect(job.pos) or false
+              if job.mode=='sheep' then after=nil
+              elseif U.distance(pos,job.pos)==1 then after=inspect(job.pos) or false
               elseif outcome=='harvested' and job.mode=='cane' then after=false end
               local recorded,recordError=rpc('result',{job=job,token=reply.token,outcome=outcome,
                 detail=detail,state=blockState,after=after})
@@ -5072,7 +5173,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.7.7\", \"ref\": \"v0.7.7\"}\
+["farm/version.json"] = "{\"version\": \"0.8.0\", \"ref\": \"v0.8.0\"}\
 ",
 }
 local args={...}

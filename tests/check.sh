@@ -48,3 +48,5 @@ lua tests/updater.lua
 lua tests/blocked.lua
 
 lua tests/cache_retention.lua
+
+lua tests/sheep.lua
