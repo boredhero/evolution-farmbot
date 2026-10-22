@@ -290,6 +290,8 @@ function Controller.run(cfg)
       elseif d.outcome=='growing' then h.interval=math.min(600,math.floor((h.interval or 60)*1.3)) end
       if d.outcome=='deferred' then h.harvests=(h.harvests or 0)+1;h.due=0 end
       h.due=U.now()+((d.outcome=='unsupported' or d.outcome=='unsupported_rope') and 3600 or h.interval or 60)
+      if j.repair and d.outcome~='replanted' and d.outcome~='harvested' then h.repairRetry=U.now()+5
+      elseif d.outcome=='replanted' or d.outcome=='harvested' then h.repairRetry=nil end
       state.history[j.key]=h
       if d.outcome=='deferred' or d.outcome=='changed' then h.due=0
       elseif j.repair then h.due=U.now()+5 end
@@ -312,7 +314,9 @@ function Controller.run(cfg)
           Vines.scan(l.job,world)
           local path,goal=route(id,d.pos,Vines.goals(l.job))
           if path then w.route=path;w.routeStart=U.copy(d.pos);return {job=l.job,path=path,goal=goal,token=l.token} end
-          return {wait=10,reason='Assigned crop currently unreachable'}
+          leases[k]=nil;Batches.release(state.batches,id)
+          state.history[k]=state.history[k] or {}
+          state.history[k].outcome='unreachable';state.history[k].due=U.now()+5
         end
       end
       local options={};local _,debts=garden:counts()
@@ -324,12 +328,13 @@ function Controller.run(cfg)
       end end
       local function due(j,h)
         -- Only physical route failures cool down. Growth timers never hide a plant from its round.
+        if j.repair and h and (h.repairRetry or 0)>U.now() then return false end
         return not h or h.outcome~='unreachable' or (h.due or 0)<=U.now()
       end
       local all={}
       for _,j in ipairs(garden:tasks(plantingInventory(fleet),stock,U.now(),inspectOnly)) do
         local h=state.history[j.key]
-        if not state.excluded[j.key] and not leases[j.key] and due(j,h) then
+        if not state.excluded[j.key] then
           local ready=h and h.observed and C.ready(j,h.observed)==true
           all[#all+1]={job=j,ready=ready}
         end
@@ -345,7 +350,8 @@ function Controller.run(cfg)
       for key,p in pairs(garden.data.plots) do
         if p.intent and state.batches.pending and state.batches.pending[key] then all[#all+1]={job=p.job} end
       end
-      options=Batches.order(state.batches,all,options,id)
+      options=Batches.order(state.batches,all,options,id,U.now())
+      local failed={}
       for i=1,math.min(12,#options) do
         local j=options[i].job
         Vines.scan(j,world)
@@ -360,12 +366,14 @@ function Controller.run(cfg)
           return {job=j,path=path,goal=goal,token=token}
         end
         state.history[j.key]=state.history[j.key] or {interval=60}
-        state.history[j.key].due=U.now()+120
+        state.history[j.key].due=U.now()+5
         state.history[j.key].seen=U.now()
-        state.history[j.key].outcome='unreachable'
+        state.history[j.key].outcome='unreachable';failed[#failed+1]=j.key
         if goal=='Start outside scanner coverage' then Batches.skip(state.batches,j.key) end
       end
-      return {wait=3,reason='Waiting for next available crop'}
+      for _,key in ipairs(failed) do state.history[key].due=U.now()+5 end
+      if #options<=12 and Batches.park(state.batches,id,U.now()+5) then persist() end
+      return {wait=1,reason='Waiting for an available crop; blocked rounds are deferred'}
     elseif m.kind=='release' then release(id);return {ok=true} end
     return nil,'Unknown request'
   end

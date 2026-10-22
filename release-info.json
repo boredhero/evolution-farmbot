@@ -1,1 +1,1 @@
-{"version": "0.7.0", "notes": "Worker fuel setup and command: coal, energy or automatic fallback; retained FE battery and Automata Core with recoverable pickaxe swaps."}
+{"version": "0.7.1", "notes": "Defer blocked crop rounds without losing progress, let the fleet continue other crops, and prevent failed repairs from monopolizing scheduling."}

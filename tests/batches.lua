@@ -114,3 +114,28 @@ assert(not B.order(state,{mature,bud},{mature,bud},2)[1],'different growth-stage
 B.release(state,1);state.inflight={} -- Simulate a restart using the same durable round state.
 assert(B.order(state,{mature,bud},{mature,bud},1)[1]==mature)
 print('PASS crop stages share ownership and a restart preserves unchecked assignments')
+
+-- Reproduce the final blocked cabbage round holding three idle workers hostage.
+state={}
+local ca=option('ca','cabbage',1,true);local cb=option('cb','cabbage',2,true)
+local fleet={ca,cb,w,rare}
+B.order(state,fleet,fleet,8,100);B.assigned(state,8,ca.job);B.finished(state,8,ca.job)
+B.assigned(state,9,w.job);B.finished(state,9,w.job)
+B.assigned(state,10,rare.job);B.finished(state,10,rare.job)
+B.order(state,fleet,fleet,9,100);assert(not B.order(state,fleet,fleet,9,100)[1])
+assert(B.park(state,8,105));assert(state.pending.cb and state.visited.ca)
+local nextCrop=B.order(state,fleet,fleet,9,101)[1]
+assert(nextCrop and nextCrop.job.name~='cabbage' and state.cycle==2)
+assert(state.pending.cb and not state.pending.ca and state.visited.ca,'carry unfinished round without revisiting checked cabbage')
+local resumed=B.order(state,fleet,fleet,21,106)[1];assert(resumed==cb,'overdue deferred crop has priority over another new sweep')
+B.assigned(state,21,cb.job);assert(not B.park(state,21,110),'never release active work')
+assert(not B.order(state,fleet,{cb},8,106)[1],'exclusive ownership survives reassignment')
+B.release(state,21);assert(B.order(state,fleet,fleet,21,106)[1]==cb,'unloading preserves resumed round')
+B.assigned(state,21,cb.job);B.finished(state,21,cb.job)
+assert(not B.order(state,fleet,{ca,cb},8,107)[1],'finished cabbage still waits for other crops in new cycle')
+print('PASS blocked final round parks without losing unchecked plants, unblocks fleet cycles and resumes exclusively without reharvesting checked plants')
+
+state={};B.order(state,{ca,cb},{ca,cb},8,0);B.assigned(state,8,ca.job);B.finished(state,8,ca.job);B.park(state,8,5)
+for tick=1,4 do assert(not B.order(state,{ca,cb},{ca,cb},9,tick)[1] and state.cycle==1) end
+assert(B.order(state,{ca,cb},{ca,cb},9,6)[1]==cb)
+print('PASS all-blocked farms wait without manufacturing cycles or forgetting round progress')

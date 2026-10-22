@@ -46,7 +46,7 @@ local lastRequest
 rednet={open=function() end,
   receive=function()
     coroutine.yield()
-    while #queue==0 do if #responses>=6 then error(stop) end;coroutine.yield() end
+    while #queue==0 do if #responses>=8 then error(stop) end;coroutine.yield() end
     lastRequest=table.remove(queue,1);return 1,lastRequest
   end,
   send=function(id,reply)
@@ -65,9 +65,16 @@ rednet={open=function() end,
       eq(state.garden.plots[assigned.job.key].debt,true)
       assert(not state.garden.plots[assigned.job.key].intent)
       enqueue('job',{pos=assigned.goal,inventory={['minecraft:wheat_seeds']=2}})
-    elseif lastRequest.kind=='job' then
+    elseif lastRequest.kind=='job' and #responses==6 then
       assert(reply.data.job.repair,'Expected automatic repair assignment')
       eq(reply.data.job.key,assigned.job.key)
+      enqueue('result',{job=reply.data.job,token=reply.data.token,pos=reply.data.goal,
+        outcome='deferred',after=false,inventory={['minecraft:wheat_seeds']=2}})
+    elseif lastRequest.kind=='job' then
+      assert(not reply.data.job or reply.data.job.key~=assigned.job.key,'Failed repair must not be immediately reassigned')
+      assert(state.garden.plots[assigned.job.key].debt,'Cooling repair must retain debt')
+      assert(state.history[assigned.job.key].repairRetry==105)
+
     end
   end}
 parallel={waitForAny=function(network,discover,scan,display,player,console,touch,stopLoop,request)
@@ -82,5 +89,5 @@ end}
 local ok,err=pcall(Controller.run,{center={x=0,y=0,z=0},radius=5,scanInterval=120,
   group='test',allowed={['1']=true},customCrops={}})
 assert(not ok and err==stop,tostring(err))
-eq(#responses,6)
+eq(#responses,8)
 print('PASS controller: discovery -> job -> durable authorization -> duplicate retry -> debt -> automatic repair')

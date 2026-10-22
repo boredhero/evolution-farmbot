@@ -1072,6 +1072,8 @@ function Controller.run(cfg)
       elseif d.outcome=='growing' then h.interval=math.min(600,math.floor((h.interval or 60)*1.3)) end
       if d.outcome=='deferred' then h.harvests=(h.harvests or 0)+1;h.due=0 end
       h.due=U.now()+((d.outcome=='unsupported' or d.outcome=='unsupported_rope') and 3600 or h.interval or 60)
+      if j.repair and d.outcome~='replanted' and d.outcome~='harvested' then h.repairRetry=U.now()+5
+      elseif d.outcome=='replanted' or d.outcome=='harvested' then h.repairRetry=nil end
       state.history[j.key]=h
       if d.outcome=='deferred' or d.outcome=='changed' then h.due=0
       elseif j.repair then h.due=U.now()+5 end
@@ -1094,7 +1096,9 @@ function Controller.run(cfg)
           Vines.scan(l.job,world)
           local path,goal=route(id,d.pos,Vines.goals(l.job))
           if path then w.route=path;w.routeStart=U.copy(d.pos);return {job=l.job,path=path,goal=goal,token=l.token} end
-          return {wait=10,reason='Assigned crop currently unreachable'}
+          leases[k]=nil;Batches.release(state.batches,id)
+          state.history[k]=state.history[k] or {}
+          state.history[k].outcome='unreachable';state.history[k].due=U.now()+5
         end
       end
       local options={};local _,debts=garden:counts()
@@ -1106,12 +1110,13 @@ function Controller.run(cfg)
       end end
       local function due(j,h)
         -- Only physical route failures cool down. Growth timers never hide a plant from its round.
+        if j.repair and h and (h.repairRetry or 0)>U.now() then return false end
         return not h or h.outcome~='unreachable' or (h.due or 0)<=U.now()
       end
       local all={}
       for _,j in ipairs(garden:tasks(plantingInventory(fleet),stock,U.now(),inspectOnly)) do
         local h=state.history[j.key]
-        if not state.excluded[j.key] and not leases[j.key] and due(j,h) then
+        if not state.excluded[j.key] then
           local ready=h and h.observed and C.ready(j,h.observed)==true
           all[#all+1]={job=j,ready=ready}
         end
@@ -1127,7 +1132,8 @@ function Controller.run(cfg)
       for key,p in pairs(garden.data.plots) do
         if p.intent and state.batches.pending and state.batches.pending[key] then all[#all+1]={job=p.job} end
       end
-      options=Batches.order(state.batches,all,options,id)
+      options=Batches.order(state.batches,all,options,id,U.now())
+      local failed={}
       for i=1,math.min(12,#options) do
         local j=options[i].job
         Vines.scan(j,world)
@@ -1142,12 +1148,14 @@ function Controller.run(cfg)
           return {job=j,path=path,goal=goal,token=token}
         end
         state.history[j.key]=state.history[j.key] or {interval=60}
-        state.history[j.key].due=U.now()+120
+        state.history[j.key].due=U.now()+5
         state.history[j.key].seen=U.now()
-        state.history[j.key].outcome='unreachable'
+        state.history[j.key].outcome='unreachable';failed[#failed+1]=j.key
         if goal=='Start outside scanner coverage' then Batches.skip(state.batches,j.key) end
       end
-      return {wait=3,reason='Waiting for next available crop'}
+      for _,key in ipairs(failed) do state.history[key].due=U.now()+5 end
+      if #options<=12 and Batches.park(state.batches,id,U.now()+5) then persist() end
+      return {wait=1,reason='Waiting for an available crop; blocked rounds are deferred'}
     elseif m.kind=='release' then release(id);return {ok=true} end
     return nil,'Unknown request'
   end
@@ -1789,11 +1797,12 @@ return D
 local B={}
 local function crop(job) return job.crop or job.name end
 local function init(s)
+  s.deferred=s.deferred or {}
   s.pending=s.pending or {};s.workers=s.workers or {};s.visited=s.visited or {}
   s.owners=s.owners or {};s.finished=s.finished or {};s.inflight=s.inflight or {};s.groups=s.groups or {};s.repairs=s.repairs or {}
 end
-function B.order(state,all,options,id)
-  init(state);id=tostring(id)
+function B.order(state,all,options,id,now)
+  init(state);id=tostring(id);now=now or 0
   local available={}
   for _,o in ipairs(all) do if not o.job.repair then available[o.job.key]=o end end
   for key in pairs(state.pending) do
@@ -1813,9 +1822,18 @@ function B.order(state,all,options,id)
       if state.workers[owner]==name then state.workers[owner]=nil end
     end
   end
-  if not next(state.pending) and not next(state.inflight) and next(available) then
-    state.cycle=(state.cycle or 0)+1;state.visited={};state.finished={};state.workers={};state.owners={}
-    for key,o in pairs(available) do state.pending[key]=crop(o.job) end
+  local unparked=false;local restartable=false
+  for _,name in pairs(state.pending) do if not state.deferred[name] then unparked=true end end
+  for _,o in pairs(available) do if not state.deferred[crop(o.job)] then restartable=true end end
+  if not unparked and not next(state.inflight) and restartable then
+    local visited={}
+    for key,o in pairs(available) do local rk=o.job.roundKey or key
+      if state.deferred[crop(o.job)] and state.visited[rk] then visited[rk]=true end
+    end
+    state.cycle=(state.cycle or 0)+1;state.visited=visited;state.finished={};state.workers={};state.owners={}
+    for key,o in pairs(available) do
+      if not state.visited[o.job.roundKey or key] then state.pending[key]=crop(o.job) end
+    end
   elseif not state.cycle and next(state.pending) then state.cycle=1 end
   state.groups={}
   for key,name in pairs(state.pending) do
@@ -1825,7 +1843,8 @@ function B.order(state,all,options,id)
   local current=state.workers[id];local ordered={}
   for _,o in ipairs(options) do
     local j=o.job;local owner=state.owners[crop(j)]
-    if (not owner or owner==id) and (not current or crop(j)==current or j.repair) then
+    local deferred=state.deferred[crop(j)]
+    if (not deferred or deferred<=now) and (not owner or owner==id) and (not current or crop(j)==current or j.repair) then
       if j.repair or (state.pending[j.key]==crop(j) and not state.inflight[j.key]) then ordered[#ordered+1]=o end
     end
   end
@@ -1833,6 +1852,8 @@ function B.order(state,all,options,id)
     local ar,br=a.job.repair==true,b.job.repair==true
     if ar~=br then return ar end
     if not ar and crop(a.job)~=crop(b.job) then
+      local ad,bd=state.deferred[crop(a.job)],state.deferred[crop(b.job)]
+      if ad and not bd then return true elseif bd and not ad then return false end
       local ag,bg=state.groups[crop(a.job)],state.groups[crop(b.job)]
       if ag.ready~=bg.ready then return ag.ready>bg.ready end
       if ag.count~=bg.count then return ag.count>bg.count end
@@ -1845,6 +1866,7 @@ function B.order(state,all,options,id)
 end
 function B.assigned(state,id,job)
   init(state);id=tostring(id)
+  state.deferred[crop(job)]=nil
   assert(not state.owners[crop(job)] or state.owners[crop(job)]==id,'Crop round already owned')
   if job.repair then state.repairs[job.key]={name=crop(job),owner=id};state.owners[crop(job)]=id end
   if not job.repair then
@@ -1860,6 +1882,15 @@ end
 function B.release(state,id)
   init(state);id=tostring(id)
   for key,owner in pairs(state.inflight) do if owner==id then state.inflight[key]=nil;state.repairs[key]=nil end end
+end
+-- Park only after the owner has no assignable work, never during travel/unload.
+function B.park(state,id,untilTime)
+  init(state);id=tostring(id)
+  for _,owner in pairs(state.inflight) do if owner==id then return false end end
+  local name=state.workers[id]
+  if not name then return false end
+  state.deferred[name]=untilTime;state.owners[name]=nil;state.workers[id]=nil
+  return true
 end
 function B.skip(state,key)
   init(state);state.pending[key]=nil;state.inflight[key]=nil;state.visited[key]=true
@@ -4906,7 +4937,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.7.0\", \"ref\": \"v0.7.0\"}\
+["farm/version.json"] = "{\"version\": \"0.7.1\", \"ref\": \"v0.7.1\"}\
 ",
 }
 local args={...}

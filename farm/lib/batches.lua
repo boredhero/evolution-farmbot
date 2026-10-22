@@ -4,11 +4,12 @@
 local B={}
 local function crop(job) return job.crop or job.name end
 local function init(s)
+  s.deferred=s.deferred or {}
   s.pending=s.pending or {};s.workers=s.workers or {};s.visited=s.visited or {}
   s.owners=s.owners or {};s.finished=s.finished or {};s.inflight=s.inflight or {};s.groups=s.groups or {};s.repairs=s.repairs or {}
 end
-function B.order(state,all,options,id)
-  init(state);id=tostring(id)
+function B.order(state,all,options,id,now)
+  init(state);id=tostring(id);now=now or 0
   local available={}
   for _,o in ipairs(all) do if not o.job.repair then available[o.job.key]=o end end
   for key in pairs(state.pending) do
@@ -28,9 +29,18 @@ function B.order(state,all,options,id)
       if state.workers[owner]==name then state.workers[owner]=nil end
     end
   end
-  if not next(state.pending) and not next(state.inflight) and next(available) then
-    state.cycle=(state.cycle or 0)+1;state.visited={};state.finished={};state.workers={};state.owners={}
-    for key,o in pairs(available) do state.pending[key]=crop(o.job) end
+  local unparked=false;local restartable=false
+  for _,name in pairs(state.pending) do if not state.deferred[name] then unparked=true end end
+  for _,o in pairs(available) do if not state.deferred[crop(o.job)] then restartable=true end end
+  if not unparked and not next(state.inflight) and restartable then
+    local visited={}
+    for key,o in pairs(available) do local rk=o.job.roundKey or key
+      if state.deferred[crop(o.job)] and state.visited[rk] then visited[rk]=true end
+    end
+    state.cycle=(state.cycle or 0)+1;state.visited=visited;state.finished={};state.workers={};state.owners={}
+    for key,o in pairs(available) do
+      if not state.visited[o.job.roundKey or key] then state.pending[key]=crop(o.job) end
+    end
   elseif not state.cycle and next(state.pending) then state.cycle=1 end
   state.groups={}
   for key,name in pairs(state.pending) do
@@ -40,7 +50,8 @@ function B.order(state,all,options,id)
   local current=state.workers[id];local ordered={}
   for _,o in ipairs(options) do
     local j=o.job;local owner=state.owners[crop(j)]
-    if (not owner or owner==id) and (not current or crop(j)==current or j.repair) then
+    local deferred=state.deferred[crop(j)]
+    if (not deferred or deferred<=now) and (not owner or owner==id) and (not current or crop(j)==current or j.repair) then
       if j.repair or (state.pending[j.key]==crop(j) and not state.inflight[j.key]) then ordered[#ordered+1]=o end
     end
   end
@@ -48,6 +59,8 @@ function B.order(state,all,options,id)
     local ar,br=a.job.repair==true,b.job.repair==true
     if ar~=br then return ar end
     if not ar and crop(a.job)~=crop(b.job) then
+      local ad,bd=state.deferred[crop(a.job)],state.deferred[crop(b.job)]
+      if ad and not bd then return true elseif bd and not ad then return false end
       local ag,bg=state.groups[crop(a.job)],state.groups[crop(b.job)]
       if ag.ready~=bg.ready then return ag.ready>bg.ready end
       if ag.count~=bg.count then return ag.count>bg.count end
@@ -60,6 +73,7 @@ function B.order(state,all,options,id)
 end
 function B.assigned(state,id,job)
   init(state);id=tostring(id)
+  state.deferred[crop(job)]=nil
   assert(not state.owners[crop(job)] or state.owners[crop(job)]==id,'Crop round already owned')
   if job.repair then state.repairs[job.key]={name=crop(job),owner=id};state.owners[crop(job)]=id end
   if not job.repair then
@@ -75,6 +89,15 @@ end
 function B.release(state,id)
   init(state);id=tostring(id)
   for key,owner in pairs(state.inflight) do if owner==id then state.inflight[key]=nil;state.repairs[key]=nil end end
+end
+-- Park only after the owner has no assignable work, never during travel/unload.
+function B.park(state,id,untilTime)
+  init(state);id=tostring(id)
+  for _,owner in pairs(state.inflight) do if owner==id then return false end end
+  local name=state.workers[id]
+  if not name then return false end
+  state.deferred[name]=untilTime;state.owners[name]=nil;state.workers[id]=nil
+  return true
 end
 function B.skip(state,key)
   init(state);state.pending[key]=nil;state.inflight[key]=nil;state.visited[key]=true
