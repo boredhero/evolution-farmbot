@@ -146,3 +146,11 @@ local gap={key='gap',name='cabbage',repair=true};B.assigned(state,8,gap);B.finis
 assert(B.park(state,8,105,'cabbage'))
 assert(B.order(state,fleet,fleet,9,101)[1].job.name~='cabbage','failed repair must free fleet before owner wakes from error sleep')
 print('PASS failed repair immediately defers its crop, independently of worker error sleep')
+
+state={};B.order(state,fleet,fleet,8,100)
+B.assigned(state,8,ca.job);B.finished(state,8,ca.job);B.assigned(state,8,cb.job);B.finished(state,8,cb.job)
+B.assigned(state,9,w.job);B.finished(state,9,w.job);B.order(state,fleet,fleet,9,100)
+assert(not B.deferBlocked(state,{},105))
+assert(B.deferBlocked(state,{inferium=true},105),'unowned inaccessible crop must not hold cycle forever')
+assert(B.order(state,fleet,fleet,10,101)[1] and state.cycle==2)
+print('PASS wholly blocked unowned crop rounds also defer so newly discovered inaccessible crops cannot stall the fleet')

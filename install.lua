@@ -1156,7 +1156,10 @@ function Controller.run(cfg)
         if goal=='Start outside scanner coverage' then Batches.skip(state.batches,j.key) end
       end
       for _,key in ipairs(failed) do state.history[key].due=U.now()+5 end
-      if #options<=12 and Batches.park(state.batches,id,U.now()+5) then persist() end
+      local parked=#options<=12 and Batches.park(state.batches,id,U.now()+5)
+      local blocked={}
+      for key,h in pairs(state.history) do if h.outcome=='unreachable' and (h.due or 0)>U.now() then blocked[key]=true end end
+      if Batches.deferBlocked(state.batches,blocked,U.now()+5) or parked then persist() end
       return {wait=1,reason='Waiting for an available crop; blocked rounds are deferred'}
     elseif m.kind=='release' then release(id);return {ok=true} end
     return nil,'Unknown request'
@@ -1894,6 +1897,20 @@ function B.park(state,id,untilTime,name)
   state.deferred[name]=untilTime;state.owners[name]=nil
   if state.workers[id]==name then state.workers[id]=nil end
   return true
+end
+function B.deferBlocked(state,blocked,untilTime)
+  init(state);local candidates={}
+  for key,name in pairs(state.pending) do
+    if candidates[name]==nil then candidates[name]=true end
+    if not blocked[key] or state.inflight[key] then candidates[name]=false end
+  end
+  local changed=false
+  for name,allBlocked in pairs(candidates) do
+    if allBlocked and not state.owners[name] and not state.deferred[name] then
+      state.deferred[name]=untilTime;changed=true
+    end
+  end
+  return changed
 end
 function B.skip(state,key)
   init(state);state.pending[key]=nil;state.inflight[key]=nil;state.visited[key]=true
@@ -4940,7 +4957,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.7.2\", \"ref\": \"v0.7.2\"}\
+["farm/version.json"] = "{\"version\": \"0.7.3\", \"ref\": \"v0.7.3\"}\
 ",
 }
 local args={...}

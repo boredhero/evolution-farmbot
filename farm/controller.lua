@@ -374,7 +374,10 @@ function Controller.run(cfg)
         if goal=='Start outside scanner coverage' then Batches.skip(state.batches,j.key) end
       end
       for _,key in ipairs(failed) do state.history[key].due=U.now()+5 end
-      if #options<=12 and Batches.park(state.batches,id,U.now()+5) then persist() end
+      local parked=#options<=12 and Batches.park(state.batches,id,U.now()+5)
+      local blocked={}
+      for key,h in pairs(state.history) do if h.outcome=='unreachable' and (h.due or 0)>U.now() then blocked[key]=true end end
+      if Batches.deferBlocked(state.batches,blocked,U.now()+5) or parked then persist() end
       return {wait=1,reason='Waiting for an available crop; blocked rounds are deferred'}
     elseif m.kind=='release' then release(id);return {ok=true} end
     return nil,'Unknown request'

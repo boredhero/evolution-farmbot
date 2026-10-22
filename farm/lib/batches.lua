@@ -100,6 +100,20 @@ function B.park(state,id,untilTime,name)
   if state.workers[id]==name then state.workers[id]=nil end
   return true
 end
+function B.deferBlocked(state,blocked,untilTime)
+  init(state);local candidates={}
+  for key,name in pairs(state.pending) do
+    if candidates[name]==nil then candidates[name]=true end
+    if not blocked[key] or state.inflight[key] then candidates[name]=false end
+  end
+  local changed=false
+  for name,allBlocked in pairs(candidates) do
+    if allBlocked and not state.owners[name] and not state.deferred[name] then
+      state.deferred[name]=untilTime;changed=true
+    end
+  end
+  return changed
+end
 function B.skip(state,key)
   init(state);state.pending[key]=nil;state.inflight[key]=nil;state.visited[key]=true
 end

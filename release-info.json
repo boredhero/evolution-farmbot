@@ -1,1 +1,1 @@
-{"version": "0.7.2", "notes": "Immediately defer failed repair rounds so worker error waits cannot keep the fleet blocked."}
+{"version": "0.7.3", "notes": "Also defer fully blocked unowned crop rounds so inaccessible newly discovered crops cannot stall fleet cycles."}
