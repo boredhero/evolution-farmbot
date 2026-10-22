@@ -286,3 +286,5 @@ Replace `mod:battery_item` with the actual item ID of your charged FE battery/ce
 Battery charging is not an automatic charger-station integration: recharge the carried cell externally when depleted. Coal chests continue supplying coal/auto workers as before. Charging normally tops up toward8000 movement fuel when the buffer falls below4000; per-call battery extraction limits may reduce the amount received.
 
 The bottom-row **BLOCKED** button shows unresolved crop route failures. Browse crops with PREV/NEXT for coordinates, last failure time, observed obstacles, and possible single-block openings. Suggestions are diagnostic only; inspect them before changing blocks. Entries clear when workers regain access.
+
+Route caches survive map scans and obstacle changes. Each route is checked against current blocks and traffic before reuse; invalid routes are bypassed and successful replacements cached. Capacity remains bounded by LRU eviction. The cache is memory-only and starts empty after a controller restart.

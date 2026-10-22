@@ -46,3 +46,5 @@ lua tests/retries.lua
 lua tests/updater.lua
 
 lua tests/blocked.lua
+
+lua tests/cache_retention.lua

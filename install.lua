@@ -1039,7 +1039,7 @@ function Controller.run(cfg)
             candidates={{pos=U.copy(d.block),name=d.name or 'Unknown block or entity'}}}
         end end end
         obstacles[U.key(d.block)]=U.now()+(moving and 1 or 20);w.nextPos=nil
-        if d.name then world:observe(d.block,{name=d.name});cache={};epoch=epoch+1;if not moving then scanAt=0 end end
+        if d.name then world:observe(d.block,{name=d.name});epoch=epoch+1;if not moving then scanAt=0 end end
       end
       return {ok=true}
     elseif m.kind=='route' then
@@ -1052,7 +1052,7 @@ function Controller.run(cfg)
       local l=d.job and leases[d.job.key]
       local j=l and l.job
       if not l or l.owner~=id or not Vines.allowed(j,d.block,{name='minecraft:vine'}) then return nil,'No matching vine-clearance assignment' end
-      world:observe(d.block,false);obstacles[U.key(d.block)]=nil;cache={};epoch=epoch+1
+      world:observe(d.block,false);obstacles[U.key(d.block)]=nil;epoch=epoch+1
       return {ok=true}
     elseif m.kind=='result' then
       local j=d.job
@@ -1196,7 +1196,7 @@ function Controller.run(cfg)
           local nextWorld=W.new(cfg.center,cfg.radius)
           nextWorld:ingest(data,U.yield)
           local nextJobs=C.discover(nextWorld,cfg.customCrops,U.yield)
-          if nextWorld.packed~=world.packed then cache={};epoch=epoch+1
+          if nextWorld.packed~=world.packed then epoch=epoch+1
           else nextWorld.components=world.components;nextWorld.revision=world.revision end
           garden:scan(nextWorld,nextJobs,started,U.now(),cfg.customCrops)
           for k,h in pairs(state.history) do
@@ -5072,7 +5072,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.7.5\", \"ref\": \"v0.7.5\"}\
+["farm/version.json"] = "{\"version\": \"0.7.6\", \"ref\": \"v0.7.6\"}\
 ",
 }
 local args={...}

@@ -1,1 +1,1 @@
-{"version":"0.7.5","notes":"Replant immediately after tilling before soil inspection can cover and revert farmland"}
+{"version":"0.7.6","notes":"Retain route cache across scans and obstacle changes while validating every reused path"}
