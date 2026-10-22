@@ -12,7 +12,7 @@ end
 function H.find()
   for slot=1,16 do if H.isHoe(turtle.getItemDetail(slot,true)) then return slot end end
 end
-function H.recover(job,custom,probe,use)
+function H.recover(job,custom,probe,use,plant)
   if not C.needsFarmland(job,custom) then return false,'Crop does not use tilled soil' end
   local where=U.key(U.add(job.pos,U.dirs[6]))
   local block,err=probe()
@@ -25,6 +25,9 @@ function H.recover(job,custom,probe,use)
   for _=1,2 do
     turtle.select(slot)
     local ok,why=use()
+    -- Entering the crop cell to inspect soil covers farmland with a solid turtle.
+    -- Verify by planting first, while the freshly tilled soil is still uncovered.
+    if plant and plant() then return true end
     block,err=probe();if err then return false,err end
     if C.farmland(block) then return true end
     if not ok or not C.dirt(block) then return false,report('Hoe could not restore farmland: '..tostring(why or 'unchanged')) end

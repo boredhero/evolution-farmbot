@@ -470,7 +470,7 @@ function Worker.run(cfg)
       local restored,why=Soil.recover(job,cfg.customCrops,probe,function()
         if inspect(job.pos) then return false,'Crop cell is now occupied' end
         return turtle['place'..side]()
-      end)
+      end,plant)
       local latest=inspect(job.pos)
       if expected(latest) then return true end
       if latest then return false,'occupied' end

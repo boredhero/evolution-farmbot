@@ -3786,7 +3786,7 @@ end
 function H.find()
   for slot=1,16 do if H.isHoe(turtle.getItemDetail(slot,true)) then return slot end end
 end
-function H.recover(job,custom,probe,use)
+function H.recover(job,custom,probe,use,plant)
   if not C.needsFarmland(job,custom) then return false,'Crop does not use tilled soil' end
   local where=U.key(U.add(job.pos,U.dirs[6]))
   local block,err=probe()
@@ -3799,6 +3799,9 @@ function H.recover(job,custom,probe,use)
   for _=1,2 do
     turtle.select(slot)
     local ok,why=use()
+    -- Entering the crop cell to inspect soil covers farmland with a solid turtle.
+    -- Verify by planting first, while the freshly tilled soil is still uncovered.
+    if plant and plant() then return true end
     block,err=probe();if err then return false,err end
     if C.farmland(block) then return true end
     if not ok or not C.dirt(block) then return false,report('Hoe could not restore farmland: '..tostring(why or 'unchanged')) end
@@ -4817,7 +4820,7 @@ function Worker.run(cfg)
       local restored,why=Soil.recover(job,cfg.customCrops,probe,function()
         if inspect(job.pos) then return false,'Crop cell is now occupied' end
         return turtle['place'..side]()
-      end)
+      end,plant)
       local latest=inspect(job.pos)
       if expected(latest) then return true end
       if latest then return false,'occupied' end
@@ -5069,7 +5072,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.7.4\", \"ref\": \"v0.7.4\"}\
+["farm/version.json"] = "{\"version\": \"0.7.5\", \"ref\": \"v0.7.5\"}\
 ",
 }
 local args={...}

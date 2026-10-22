@@ -115,6 +115,10 @@ local function run(options)
     moveCalls=moveCalls+1;local p=target(side)
     if options.entityBlock and U.key(p)=='1,1,0' then return false,'Movement obstructed' end
     if grid[U.key(p)] then return false,'obstructed' end
+    local below=U.key(U.add(p,U.dirs[6]))
+    if options.soil and grid[below] and grid[below].name=='minecraft:farmland' then
+      grid[below]={name='minecraft:dirt'};events[#events+1]='covered-farmland:'..below
+    end
     position=p;return true
   end
   turtle.forward=function() return move('') end
