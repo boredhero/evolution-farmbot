@@ -1,1 +1,1 @@
-{"version":"0.7.6","notes":"Retain route cache across scans and obstacle changes while validating every reused path"}
+{"version":"0.7.7","notes":"Show readable crop names without mod namespaces in farming and inspection status"}

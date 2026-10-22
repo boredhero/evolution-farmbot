@@ -5020,7 +5020,7 @@ function Worker.run(cfg)
             if reply.path and home then needsDock='Fuel reserve for next job'
             else status=not home and tostring(homeError) or 'Waiting for a route';sleep(1) end
           else
-            status=(cfg.dryRun and 'Inspecting ' or 'Farming ')..job.name
+            status=(cfg.dryRun and 'Inspecting ' or 'Farming ')..job.name:gsub('^[^:]+:',''):gsub('_',' ')
             local reached,why=navigate(Vines.goals(job),false,reply.path,job)
             if reached and job.vines and #job.vines>0 then
               for _,target in ipairs(job.vines) do
@@ -5072,7 +5072,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.7.6\", \"ref\": \"v0.7.6\"}\
+["farm/version.json"] = "{\"version\": \"0.7.7\", \"ref\": \"v0.7.7\"}\
 ",
 }
 local args={...}

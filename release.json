@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "version": "0.7.6",
-  "ref": "v0.7.6",
-  "notes": "Retain route cache across scans and obstacle changes while validating every reused path",
+  "version": "0.7.7",
+  "ref": "v0.7.7",
+  "notes": "Show readable crop names without mod namespaces in farming and inspection status",
   "files": [
     {"path": "LICENSE", "size": 35149, "adler32": "f70779ec"},
     {"path": "NOTICE", "size": 691, "adler32": "ad64ed8d"},
@@ -47,7 +47,7 @@
     {"path": "farm/lib/world.lua", "size": 4929, "adler32": "7d2e7d87"},
     {"path": "farm/setup.lua", "size": 6674, "adler32": "d881d1a1"},
     {"path": "farm/updater.lua", "size": 8484, "adler32": "75871ef3"},
-    {"path": "farm/worker.lua", "size": 34518, "adler32": "d62d66c8"},
+    {"path": "farm/worker.lua", "size": 34551, "adler32": "61a76f62"},
     {"path": "startup.lua", "size": 351, "adler32": "e5a976c1"},
     {"path": "update.lua", "size": 197, "adler32": "b1644169"}
   ]
