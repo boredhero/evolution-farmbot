@@ -86,4 +86,4 @@ Follow-up evidence after v0.5.3 deployment: live routes to shared docks can stil
 
 52. Stop clearing all cached routes on changed scans, obstacle reports or vine clearance. Preserve existing per-use occupancy/traffic validation and bounded LRU eviction. Real-controller regression verifies unaffected routes reuse without new searches and an obstructed cached route is replanned safely. Full suite passed. v0.7.6 pushed and deployed to4/8/9/10/21; all runtime bytes and tagged public installer verified, all five computers running. Main raw installer temporarily CDN cached. Backup: /home/noah/minecraft/farmbot-backups/cache-v076-20261021-204649.
 
-53. Farming/inspection status: omit mod namespace and replace underscores with spaces so narrow worker GUI rows show the crop name. Deployment pending.
+53. Farming/inspection status: omit mod namespace and replace underscores with spaces so narrow worker GUI rows show the crop name. Full suite passed; v0.7.7 pushed and deployed to4/8/9/10/21. Runtime bytes and public main/tag installers verified; all five computers running. Backup: /home/noah/minecraft/farmbot-backups/labels-v077-20261021-204856.
