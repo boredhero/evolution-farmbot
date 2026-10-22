@@ -290,7 +290,9 @@ function Controller.run(cfg)
       elseif d.outcome=='growing' then h.interval=math.min(600,math.floor((h.interval or 60)*1.3)) end
       if d.outcome=='deferred' then h.harvests=(h.harvests or 0)+1;h.due=0 end
       h.due=U.now()+((d.outcome=='unsupported' or d.outcome=='unsupported_rope') and 3600 or h.interval or 60)
-      if j.repair and d.outcome~='replanted' and d.outcome~='harvested' then h.repairRetry=U.now()+5
+      if j.repair and d.outcome~='replanted' and d.outcome~='harvested' then
+        h.repairRetry=U.now()+5
+        Batches.park(state.batches,id,U.now()+5,j.crop or j.name)
       elseif d.outcome=='replanted' or d.outcome=='harvested' then h.repairRetry=nil end
       state.history[j.key]=h
       if d.outcome=='deferred' or d.outcome=='changed' then h.due=0

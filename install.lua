@@ -1072,7 +1072,9 @@ function Controller.run(cfg)
       elseif d.outcome=='growing' then h.interval=math.min(600,math.floor((h.interval or 60)*1.3)) end
       if d.outcome=='deferred' then h.harvests=(h.harvests or 0)+1;h.due=0 end
       h.due=U.now()+((d.outcome=='unsupported' or d.outcome=='unsupported_rope') and 3600 or h.interval or 60)
-      if j.repair and d.outcome~='replanted' and d.outcome~='harvested' then h.repairRetry=U.now()+5
+      if j.repair and d.outcome~='replanted' and d.outcome~='harvested' then
+        h.repairRetry=U.now()+5
+        Batches.park(state.batches,id,U.now()+5,j.crop or j.name)
       elseif d.outcome=='replanted' or d.outcome=='harvested' then h.repairRetry=nil end
       state.history[j.key]=h
       if d.outcome=='deferred' or d.outcome=='changed' then h.due=0
@@ -1884,12 +1886,13 @@ function B.release(state,id)
   for key,owner in pairs(state.inflight) do if owner==id then state.inflight[key]=nil;state.repairs[key]=nil end end
 end
 -- Park only after the owner has no assignable work, never during travel/unload.
-function B.park(state,id,untilTime)
+function B.park(state,id,untilTime,name)
   init(state);id=tostring(id)
   for _,owner in pairs(state.inflight) do if owner==id then return false end end
-  local name=state.workers[id]
-  if not name then return false end
-  state.deferred[name]=untilTime;state.owners[name]=nil;state.workers[id]=nil
+  name=name or state.workers[id]
+  if not name or state.owners[name]~=id then return false end
+  state.deferred[name]=untilTime;state.owners[name]=nil
+  if state.workers[id]==name then state.workers[id]=nil end
   return true
 end
 function B.skip(state,key)
@@ -4937,7 +4940,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.7.1\", \"ref\": \"v0.7.1\"}\
+["farm/version.json"] = "{\"version\": \"0.7.2\", \"ref\": \"v0.7.2\"}\
 ",
 }
 local args={...}

@@ -91,12 +91,13 @@ function B.release(state,id)
   for key,owner in pairs(state.inflight) do if owner==id then state.inflight[key]=nil;state.repairs[key]=nil end end
 end
 -- Park only after the owner has no assignable work, never during travel/unload.
-function B.park(state,id,untilTime)
+function B.park(state,id,untilTime,name)
   init(state);id=tostring(id)
   for _,owner in pairs(state.inflight) do if owner==id then return false end end
-  local name=state.workers[id]
-  if not name then return false end
-  state.deferred[name]=untilTime;state.owners[name]=nil;state.workers[id]=nil
+  name=name or state.workers[id]
+  if not name or state.owners[name]~=id then return false end
+  state.deferred[name]=untilTime;state.owners[name]=nil
+  if state.workers[id]==name then state.workers[id]=nil end
   return true
 end
 function B.skip(state,key)

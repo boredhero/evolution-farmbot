@@ -139,3 +139,10 @@ state={};B.order(state,{ca,cb},{ca,cb},8,0);B.assigned(state,8,ca.job);B.finishe
 for tick=1,4 do assert(not B.order(state,{ca,cb},{ca,cb},9,tick)[1] and state.cycle==1) end
 assert(B.order(state,{ca,cb},{ca,cb},9,6)[1]==cb)
 print('PASS all-blocked farms wait without manufacturing cycles or forgetting round progress')
+
+state={};B.order(state,fleet,fleet,8,100);B.assigned(state,8,ca.job);B.finished(state,8,ca.job)
+B.assigned(state,9,w.job);B.finished(state,9,w.job);B.assigned(state,10,rare.job);B.finished(state,10,rare.job)
+local gap={key='gap',name='cabbage',repair=true};B.assigned(state,8,gap);B.finished(state,8,gap)
+assert(B.park(state,8,105,'cabbage'))
+assert(B.order(state,fleet,fleet,9,101)[1].job.name~='cabbage','failed repair must free fleet before owner wakes from error sleep')
+print('PASS failed repair immediately defers its crop, independently of worker error sleep')

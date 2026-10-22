@@ -74,6 +74,7 @@ rednet={open=function() end,
       assert(not reply.data.job or reply.data.job.key~=assigned.job.key,'Failed repair must not be immediately reassigned')
       assert(state.garden.plots[assigned.job.key].debt,'Cooling repair must retain debt')
       assert(state.history[assigned.job.key].repairRetry==105)
+      assert(state.batches.deferred['minecraft:wheat']==105,'failed repair defers immediately')
 
     end
   end}

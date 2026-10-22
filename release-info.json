@@ -1,1 +1,1 @@
-{"version": "0.7.1", "notes": "Defer blocked crop rounds without losing progress, let the fleet continue other crops, and prevent failed repairs from monopolizing scheduling."}
+{"version": "0.7.2", "notes": "Immediately defer failed repair rounds so worker error waits cannot keep the fleet blocked."}
