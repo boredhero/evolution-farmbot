@@ -1,1 +1,1 @@
-{"version": "0.7.3", "notes": "Also defer fully blocked unowned crop rounds so inaccessible newly discovered crops cannot stall fleet cycles."}
+{"version":"0.7.4","notes":"Blocked crops tab with route failures and bounded obstacle coordinate diagnostics"}

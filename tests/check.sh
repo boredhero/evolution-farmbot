@@ -44,3 +44,5 @@ lua tests/fuel.lua
 lua tests/energy.lua
 lua tests/retries.lua
 lua tests/updater.lua
+
+lua tests/blocked.lua

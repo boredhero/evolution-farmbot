@@ -786,6 +786,7 @@ local U=require('farm.lib.util')
 local S=require('farm.lib.store')
 local W=require('farm.lib.world')
 local P=require('farm.lib.path')
+local Blocked=require('farm.lib.blocked')
 local RouteCache=require('farm.lib.route_cache')
 local C=require('farm.lib.crops')
 local N=require('farm.lib.network')
@@ -991,7 +992,7 @@ function Controller.run(cfg)
       local l=d.job and leases[d.job.key]
       if not l or l.owner~=id or l.token~=d.token then return nil,'Crop assignment is no longer valid' end
       local answer,why=garden:begin(l.job,id,l.token,(d.inventory[l.job.seed] or 0)>0,U.now())
-      if answer then persist(l.job) end -- Write-ahead debt must reach disk BEFORE authorizing a dig.
+      if answer then if state.history[l.job.key] then state.history[l.job.key].routeIssue=nil end;persist(l.job) end -- Write-ahead debt must reach disk BEFORE authorizing a dig.
       return answer,why
     elseif m.kind=='seed' then
       if not w.dock or not U.equal(d.pos,w.dock) then return nil,'Seed delivery requires the worker at its dock' end
@@ -1032,6 +1033,11 @@ function Controller.run(cfg)
     elseif m.kind=='blocked' then
       if d.block and world:inside(d.block) then
         local moving=Traffic.turtle(d.name)
+        if not moving then for key,l in pairs(leases) do if l.owner==id then
+          state.history[key]=state.history[key] or {}
+          state.history[key].routeIssue={reason='Worker encountered an obstacle',kind='observed',at=U.now(),
+            candidates={{pos=U.copy(d.block),name=d.name or 'Unknown block or entity'}}}
+        end end end
         obstacles[U.key(d.block)]=U.now()+(moving and 1 or 20);w.nextPos=nil
         if d.name then world:observe(d.block,{name=d.name});cache={};epoch=epoch+1;if not moving then scanAt=0 end end
       end
@@ -1097,10 +1103,11 @@ function Controller.run(cfg)
         elseif l.owner==id then
           Vines.scan(l.job,world)
           local path,goal=route(id,d.pos,Vines.goals(l.job))
-          if path then w.route=path;w.routeStart=U.copy(d.pos);return {job=l.job,path=path,goal=goal,token=l.token} end
+          if path then if state.history[k] then state.history[k].routeIssue=nil end;w.route=path;w.routeStart=U.copy(d.pos);return {job=l.job,path=path,goal=goal,token=l.token} end
           leases[k]=nil;Batches.release(state.batches,id)
           state.history[k]=state.history[k] or {}
           state.history[k].outcome='unreachable';state.history[k].due=U.now()+5
+          state.history[k].routeIssue={reason=goal,at=U.now()}
         end
       end
       local options={};local _,debts=garden:counts()
@@ -1141,6 +1148,7 @@ function Controller.run(cfg)
         Vines.scan(j,world)
         local path,goal=route(id,d.pos,Vines.goals(j))
         if path then
+          if state.history[j.key] then state.history[j.key].routeIssue=nil end
           leaseSerial=leaseSerial+1
           local token=tostring(id)..':'..boot..':'..leaseSerial..':'..j.key
           j.accessCandidates=#CropAccess.candidates(j,world,garden.data.plots,state.batches,leases,state.excluded)>0
@@ -1152,6 +1160,12 @@ function Controller.run(cfg)
         state.history[j.key]=state.history[j.key] or {interval=60}
         state.history[j.key].due=U.now()+5
         state.history[j.key].seen=U.now()
+        local h=state.history[j.key]
+        if not h.routeIssue or h.routeIssue.revision~=boot..":"..world.revision or h.routeIssue.reason~=goal then
+          h.routeIssue=Blocked.explain(world,d.pos,Vines.goals(j),goal,U.yield)
+          h.routeIssue.revision=boot..":"..world.revision
+        end
+        h.routeIssue.at=U.now()
         state.history[j.key].outcome='unreachable';failed[#failed+1]=j.key
         if goal=='Start outside scanner coverage' then Batches.skip(state.batches,j.key) end
       end
@@ -1383,6 +1397,7 @@ local F=require('farm.lib.frame')
 local Compacting=require('farm.lib.compacting')
 local RouteCache=require('farm.lib.route_cache')
 local GrowthTools=require('farm.lib.growth_tools')
+local Blocked=require('farm.lib.blocked')
 local D={};D.__index=D
 function D.installedVersion()
   if not fs or not textutils then return 'unversioned' end
@@ -1471,6 +1486,32 @@ function D:render(m,v,w,h)
   local barH=2
   local hh=h-barH
   local function bar(y) f:fill(1,y,w,1,' ','0','b');return 3 end
+  local blocked=Blocked.list(m.plots,m.history,m.excluded)
+  local blockedLabel='[BLOCKED '..#blocked..']'
+  if v.blocked then
+    f:write(2,1,'FARMBOT / BLOCKED CROPS','0','b')
+    f:write(2,2,#blocked..' crops with unresolved route failures','0','b')
+    v.blockedPage=math.max(1,math.min(#blocked,v.blockedPage or 1))
+    local row=blocked[v.blockedPage]
+    if row then
+      local issue=row.issue
+      f:write(2,4,v.blockedPage..' / '..#blocked..'  '..short(row.job.name),'4')
+      f:write(2,5,'Crop: '..U.key(row.job.pos))
+      f:write(2,6,issue.reason or 'Route unavailable','4')
+      f:write(2,7,'Last failed check: '..math.max(0,math.floor((m.now or 0)-(issue.at or 0)))..'s ago','8')
+      f:write(2,9,issue.kind=='bridge' and 'Possible one-block openings:' or (issue.kind=='observed' and 'Observed movement obstruction:' or 'Blocked approach cells:'),'0')
+      local candidates=issue.candidates or {}
+      if #candidates==0 then f:write(2,10,'Exact obstacle not identified.','8') end
+      for i=1,math.min(3,#candidates) do
+        local c=candidates[i];local y=8+i*2
+        if y+1<=hh then f:write(2,y,U.key(c.pos),'4');f:write(2,y+1,short(c.name)) end
+      end
+      if hh>=17 then f:write(2,17,'Inspect candidates before moving blocks.','8') end
+    else f:write(2,5,'No unresolved blocked crops.','5') end
+    local x=bar(h-1);x=button(f,hits,x,h-1,'[PREV]','blockedPage',-1);button(f,hits,x,h-1,'[NEXT]','blockedPage',1)
+    x=bar(h);x=button(f,hits,x,h,'[MAP]','view','map');button(f,hits,x,h,'[LIVE]','view','stats')
+    return f,hits
+  end
   if v.settings then
     local recipes=Compacting.recipes
     v.setting=math.max(1,math.min(#recipes+1+#GrowthTools.options,v.setting or 1))
@@ -1536,13 +1577,14 @@ function D:render(m,v,w,h)
     f:write(2,6,'Use TEXT - for more room.','4')
     f:write(2,8,'Plots '..count(m.plots)..' | workers '..count(m.workers))
     f:write(2,10,'Lifetime harvests '..m.metrics.harvests)
-    local bx=bar(h-1);bx=button(f,hits,bx,h-1,'[STATS]','view','lifetime');button(f,hits,bx,h-1,'[SETTINGS]','view','settings')
+    local bx=bar(h-1);bx=button(f,hits,bx,h-1,'[STATS]','view','lifetime');bx=button(f,hits,bx,h-1,'[SETTINGS]','view','settings');button(f,hits,bx,h-1,blockedLabel,'view','blocked')
     local x=bar(h);x=button(f,hits,x,h,'[TEXT -]','scale',-0.5);button(f,hits,x,h,'[TEXT +]','scale',0.5)
     return f,hits
   end
   if role=='map' then
     local layer=pickLayer(m,v)
     local x=bar(hh+1)
+    x=button(f,hits,x,hh+1,blockedLabel,'view','blocked')
     x=button(f,hits,x,hh+1,'[Y-]','layer',-1)
     x=button(f,hits,x,hh+1,'[Y+]','layer',1)
     x=button(f,hits,x,hh+1,'[AUTO]','auto')
@@ -1734,7 +1776,7 @@ function D:render(m,v,w,h)
       f:write(3,hh-footer+3+i,(math.floor(m.now-event.time)..'s  '..event.outcome..'  '..short(event.name)..(event.detail and ' | '..event.detail or '')):sub(1,w-5),event.outcome=='deferred' and 'e' or '0')
     end end
     f:write(3,hh-1,'? = unseen/stale | HV = lifetime harvest actions','0')
-    local nav=bar(h-1);nav=button(f,hits,nav,h-1,'[MAP]','view','map');nav=button(f,hits,nav,h-1,'[STATS]','view','lifetime');button(f,hits,nav,h-1,'[SETTINGS]','view','settings')
+    local nav=bar(h-1);nav=button(f,hits,nav,h-1,'[MAP]','view','map');nav=button(f,hits,nav,h-1,'[STATS]','view','lifetime');nav=button(f,hits,nav,h-1,'[SETTINGS]','view','settings');button(f,hits,nav,h-1,blockedLabel,'view','blocked')
     local bx=bar(h);bx=button(f,hits,bx,h,'[PREV CROPS]','page',-1);bx=button(f,hits,bx,h,'[NEXT CROPS]','page',1)
     bx=button(f,hits,bx,h,'[TEXT -]','scale',-0.5);button(f,hits,bx,h,'[TEXT +]','scale',0.5)
   end
@@ -1772,7 +1814,8 @@ function D:touch(name,x,y,m)
         if m.settings.compacting[hit.value] and (hit.value=='wool' or hit.value=='string') then
           m.settings.compacting[hit.value=='wool' and 'string' or 'wool']=false
         end
-      elseif action=='view' then v.settings=hit.value=='settings';v.role=hit.value=='map' and 'map' or 'stats';v.lifetime=hit.value=='lifetime'
+      elseif action=='blockedPage' then v.blockedPage=math.max(1,(v.blockedPage or 1)+hit.value)
+      elseif action=='view' then v.blocked=hit.value=='blocked';v.settings=hit.value=='settings';v.role=hit.value=='map' and 'map' or 'stats';v.lifetime=hit.value=='lifetime'
       elseif action=='bot' then v.bot=math.max(1,(v.bot or 1)+hit.value)
       elseif action=='page' then v.page=math.max(1,(v.page or 1)+hit.value)
       elseif action=='cache' then v.cache=v.cache==false
@@ -1914,6 +1957,75 @@ function B.deferBlocked(state,blocked,untilTime)
 end
 function B.skip(state,key)
   init(state);state.pending[key]=nil;state.inflight[key]=nil;state.visited[key]=true
+end
+return B
+]=],
+["farm/lib/blocked.lua"] = [=[
+-- SPDX-License-Identifier: GPL-3.0-only
+-- Copyright (C) 2026 boredhero
+local U=require('farm.lib.util')
+local B={}
+-- Bounded reverse inspection. A candidate bridges the crop pocket to the
+-- already-proven reachable component; never suggest removing it automatically.
+function B.explain(world,start,goals,reason,yieldFn)
+  local out={reason=reason or 'Route unavailable',candidates={}}
+  local cache=world.components;local source=world:index(start)
+  local label=cache and cache.labels[source]
+  local connected=label and cache.complete[label]
+  local queue,seen,boundary={},{},{}
+  local function add(p)
+    local id=world:index(p)
+    if id and not seen[id] and not world:blocked(p) then seen[id]=true;queue[#queue+1]=p end
+  end
+  for _,g in ipairs(goals) do add(g) end
+  local function candidate(p)
+    local b=world:block(p)
+    if b then out.candidates[#out.candidates+1]={pos=U.copy(p),name=b.name} end
+  end
+  if #queue==0 then
+    for _,g in ipairs(goals) do candidate(g) end
+    out.kind='approach';return out
+  end
+  if not connected or reason~='No route in surveyed space' then return out end
+  local at=1
+  while at<=#queue and at<=512 do
+    local p=queue[at]
+    for _,d in ipairs(U.dirs) do
+      local q=U.add(p,d);local id=world:index(q)
+      if id then
+        if world:blocked(q) then
+          if not boundary[id] then
+            boundary[id]=true
+            for _,side in ipairs(U.dirs) do
+              local other=world:index(U.add(q,side))
+              if other and cache.labels[other]==label then candidate(q);break end
+            end
+          end
+        else add(q) end
+      end
+    end
+    if yieldFn and at%128==0 then yieldFn() end
+    at=at+1
+  end
+  table.sort(out.candidates,function(a,b)
+    local at=a.name:find('torch') and 0 or 1;local bt=b.name:find('torch') and 0 or 1
+    if at~=bt then return at<bt end
+    return U.key(a.pos)<U.key(b.pos)
+  end)
+  while #out.candidates>3 do table.remove(out.candidates) end
+  if #out.candidates>0 then out.kind='bridge' end
+  return out
+end
+function B.list(plots,history,excluded)
+  local rows={}
+  for key,p in pairs(plots or {}) do
+    local h=history and history[key]
+    if h and h.routeIssue and not (excluded and excluded[key]) and p.live~=false then
+      rows[#rows+1]={key=key,job=p.job,issue=h.routeIssue}
+    end
+  end
+  table.sort(rows,function(a,b)return a.key<b.key end)
+  return rows
 end
 return B
 ]=],
@@ -4957,7 +5069,7 @@ local args={...}
 if args[1] and args[1]~='system' then print('Use: update system');return end
 require('farm.updater').run()
 ]=],
-["farm/version.json"] = "{\"version\": \"0.7.3\", \"ref\": \"v0.7.3\"}\
+["farm/version.json"] = "{\"version\": \"0.7.4\", \"ref\": \"v0.7.4\"}\
 ",
 }
 local args={...}

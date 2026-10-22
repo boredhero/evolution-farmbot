@@ -4,6 +4,7 @@ local U=require('farm.lib.util')
 local S=require('farm.lib.store')
 local W=require('farm.lib.world')
 local P=require('farm.lib.path')
+local Blocked=require('farm.lib.blocked')
 local RouteCache=require('farm.lib.route_cache')
 local C=require('farm.lib.crops')
 local N=require('farm.lib.network')
@@ -209,7 +210,7 @@ function Controller.run(cfg)
       local l=d.job and leases[d.job.key]
       if not l or l.owner~=id or l.token~=d.token then return nil,'Crop assignment is no longer valid' end
       local answer,why=garden:begin(l.job,id,l.token,(d.inventory[l.job.seed] or 0)>0,U.now())
-      if answer then persist(l.job) end -- Write-ahead debt must reach disk BEFORE authorizing a dig.
+      if answer then if state.history[l.job.key] then state.history[l.job.key].routeIssue=nil end;persist(l.job) end -- Write-ahead debt must reach disk BEFORE authorizing a dig.
       return answer,why
     elseif m.kind=='seed' then
       if not w.dock or not U.equal(d.pos,w.dock) then return nil,'Seed delivery requires the worker at its dock' end
@@ -250,6 +251,11 @@ function Controller.run(cfg)
     elseif m.kind=='blocked' then
       if d.block and world:inside(d.block) then
         local moving=Traffic.turtle(d.name)
+        if not moving then for key,l in pairs(leases) do if l.owner==id then
+          state.history[key]=state.history[key] or {}
+          state.history[key].routeIssue={reason='Worker encountered an obstacle',kind='observed',at=U.now(),
+            candidates={{pos=U.copy(d.block),name=d.name or 'Unknown block or entity'}}}
+        end end end
         obstacles[U.key(d.block)]=U.now()+(moving and 1 or 20);w.nextPos=nil
         if d.name then world:observe(d.block,{name=d.name});cache={};epoch=epoch+1;if not moving then scanAt=0 end end
       end
@@ -315,10 +321,11 @@ function Controller.run(cfg)
         elseif l.owner==id then
           Vines.scan(l.job,world)
           local path,goal=route(id,d.pos,Vines.goals(l.job))
-          if path then w.route=path;w.routeStart=U.copy(d.pos);return {job=l.job,path=path,goal=goal,token=l.token} end
+          if path then if state.history[k] then state.history[k].routeIssue=nil end;w.route=path;w.routeStart=U.copy(d.pos);return {job=l.job,path=path,goal=goal,token=l.token} end
           leases[k]=nil;Batches.release(state.batches,id)
           state.history[k]=state.history[k] or {}
           state.history[k].outcome='unreachable';state.history[k].due=U.now()+5
+          state.history[k].routeIssue={reason=goal,at=U.now()}
         end
       end
       local options={};local _,debts=garden:counts()
@@ -359,6 +366,7 @@ function Controller.run(cfg)
         Vines.scan(j,world)
         local path,goal=route(id,d.pos,Vines.goals(j))
         if path then
+          if state.history[j.key] then state.history[j.key].routeIssue=nil end
           leaseSerial=leaseSerial+1
           local token=tostring(id)..':'..boot..':'..leaseSerial..':'..j.key
           j.accessCandidates=#CropAccess.candidates(j,world,garden.data.plots,state.batches,leases,state.excluded)>0
@@ -370,6 +378,12 @@ function Controller.run(cfg)
         state.history[j.key]=state.history[j.key] or {interval=60}
         state.history[j.key].due=U.now()+5
         state.history[j.key].seen=U.now()
+        local h=state.history[j.key]
+        if not h.routeIssue or h.routeIssue.revision~=boot..":"..world.revision or h.routeIssue.reason~=goal then
+          h.routeIssue=Blocked.explain(world,d.pos,Vines.goals(j),goal,U.yield)
+          h.routeIssue.revision=boot..":"..world.revision
+        end
+        h.routeIssue.at=U.now()
         state.history[j.key].outcome='unreachable';failed[#failed+1]=j.key
         if goal=='Start outside scanner coverage' then Batches.skip(state.batches,j.key) end
       end

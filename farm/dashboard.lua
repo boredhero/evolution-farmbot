@@ -8,6 +8,7 @@ local F=require('farm.lib.frame')
 local Compacting=require('farm.lib.compacting')
 local RouteCache=require('farm.lib.route_cache')
 local GrowthTools=require('farm.lib.growth_tools')
+local Blocked=require('farm.lib.blocked')
 local D={};D.__index=D
 function D.installedVersion()
   if not fs or not textutils then return 'unversioned' end
@@ -96,6 +97,32 @@ function D:render(m,v,w,h)
   local barH=2
   local hh=h-barH
   local function bar(y) f:fill(1,y,w,1,' ','0','b');return 3 end
+  local blocked=Blocked.list(m.plots,m.history,m.excluded)
+  local blockedLabel='[BLOCKED '..#blocked..']'
+  if v.blocked then
+    f:write(2,1,'FARMBOT / BLOCKED CROPS','0','b')
+    f:write(2,2,#blocked..' crops with unresolved route failures','0','b')
+    v.blockedPage=math.max(1,math.min(#blocked,v.blockedPage or 1))
+    local row=blocked[v.blockedPage]
+    if row then
+      local issue=row.issue
+      f:write(2,4,v.blockedPage..' / '..#blocked..'  '..short(row.job.name),'4')
+      f:write(2,5,'Crop: '..U.key(row.job.pos))
+      f:write(2,6,issue.reason or 'Route unavailable','4')
+      f:write(2,7,'Last failed check: '..math.max(0,math.floor((m.now or 0)-(issue.at or 0)))..'s ago','8')
+      f:write(2,9,issue.kind=='bridge' and 'Possible one-block openings:' or (issue.kind=='observed' and 'Observed movement obstruction:' or 'Blocked approach cells:'),'0')
+      local candidates=issue.candidates or {}
+      if #candidates==0 then f:write(2,10,'Exact obstacle not identified.','8') end
+      for i=1,math.min(3,#candidates) do
+        local c=candidates[i];local y=8+i*2
+        if y+1<=hh then f:write(2,y,U.key(c.pos),'4');f:write(2,y+1,short(c.name)) end
+      end
+      if hh>=17 then f:write(2,17,'Inspect candidates before moving blocks.','8') end
+    else f:write(2,5,'No unresolved blocked crops.','5') end
+    local x=bar(h-1);x=button(f,hits,x,h-1,'[PREV]','blockedPage',-1);button(f,hits,x,h-1,'[NEXT]','blockedPage',1)
+    x=bar(h);x=button(f,hits,x,h,'[MAP]','view','map');button(f,hits,x,h,'[LIVE]','view','stats')
+    return f,hits
+  end
   if v.settings then
     local recipes=Compacting.recipes
     v.setting=math.max(1,math.min(#recipes+1+#GrowthTools.options,v.setting or 1))
@@ -161,13 +188,14 @@ function D:render(m,v,w,h)
     f:write(2,6,'Use TEXT - for more room.','4')
     f:write(2,8,'Plots '..count(m.plots)..' | workers '..count(m.workers))
     f:write(2,10,'Lifetime harvests '..m.metrics.harvests)
-    local bx=bar(h-1);bx=button(f,hits,bx,h-1,'[STATS]','view','lifetime');button(f,hits,bx,h-1,'[SETTINGS]','view','settings')
+    local bx=bar(h-1);bx=button(f,hits,bx,h-1,'[STATS]','view','lifetime');bx=button(f,hits,bx,h-1,'[SETTINGS]','view','settings');button(f,hits,bx,h-1,blockedLabel,'view','blocked')
     local x=bar(h);x=button(f,hits,x,h,'[TEXT -]','scale',-0.5);button(f,hits,x,h,'[TEXT +]','scale',0.5)
     return f,hits
   end
   if role=='map' then
     local layer=pickLayer(m,v)
     local x=bar(hh+1)
+    x=button(f,hits,x,hh+1,blockedLabel,'view','blocked')
     x=button(f,hits,x,hh+1,'[Y-]','layer',-1)
     x=button(f,hits,x,hh+1,'[Y+]','layer',1)
     x=button(f,hits,x,hh+1,'[AUTO]','auto')
@@ -359,7 +387,7 @@ function D:render(m,v,w,h)
       f:write(3,hh-footer+3+i,(math.floor(m.now-event.time)..'s  '..event.outcome..'  '..short(event.name)..(event.detail and ' | '..event.detail or '')):sub(1,w-5),event.outcome=='deferred' and 'e' or '0')
     end end
     f:write(3,hh-1,'? = unseen/stale | HV = lifetime harvest actions','0')
-    local nav=bar(h-1);nav=button(f,hits,nav,h-1,'[MAP]','view','map');nav=button(f,hits,nav,h-1,'[STATS]','view','lifetime');button(f,hits,nav,h-1,'[SETTINGS]','view','settings')
+    local nav=bar(h-1);nav=button(f,hits,nav,h-1,'[MAP]','view','map');nav=button(f,hits,nav,h-1,'[STATS]','view','lifetime');nav=button(f,hits,nav,h-1,'[SETTINGS]','view','settings');button(f,hits,nav,h-1,blockedLabel,'view','blocked')
     local bx=bar(h);bx=button(f,hits,bx,h,'[PREV CROPS]','page',-1);bx=button(f,hits,bx,h,'[NEXT CROPS]','page',1)
     bx=button(f,hits,bx,h,'[TEXT -]','scale',-0.5);button(f,hits,bx,h,'[TEXT +]','scale',0.5)
   end
@@ -397,7 +425,8 @@ function D:touch(name,x,y,m)
         if m.settings.compacting[hit.value] and (hit.value=='wool' or hit.value=='string') then
           m.settings.compacting[hit.value=='wool' and 'string' or 'wool']=false
         end
-      elseif action=='view' then v.settings=hit.value=='settings';v.role=hit.value=='map' and 'map' or 'stats';v.lifetime=hit.value=='lifetime'
+      elseif action=='blockedPage' then v.blockedPage=math.max(1,(v.blockedPage or 1)+hit.value)
+      elseif action=='view' then v.blocked=hit.value=='blocked';v.settings=hit.value=='settings';v.role=hit.value=='map' and 'map' or 'stats';v.lifetime=hit.value=='lifetime'
       elseif action=='bot' then v.bot=math.max(1,(v.bot or 1)+hit.value)
       elseif action=='page' then v.page=math.max(1,(v.page or 1)+hit.value)
       elseif action=='cache' then v.cache=v.cache==false
